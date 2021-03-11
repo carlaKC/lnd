@@ -415,17 +415,16 @@ out:
 				b.bestBlock = newBestBlock
 
 			case chain.RelevantTx:
-				// We only care about notifying on confirmed
-				// spends, so if this is a mempool spend, we can
-				// ignore it and wait for the spend to appear in
-				// on-chain.
-				if item.Block == nil {
-					continue
+				// If the spend is in the mempool, we set the
+				// height for this tx as 0.
+				var height uint32
+				if item.Block != nil {
+					height = uint32(item.Block.Height)
 				}
 
 				tx := btcutil.NewTx(&item.TxRecord.MsgTx)
 				err := b.txNotifier.ProcessRelevantSpendTx(
-					tx, uint32(item.Block.Height),
+					tx, height,
 				)
 				if err != nil {
 					chainntnfs.Log.Errorf("Unable to "+
@@ -611,6 +610,14 @@ func (b *BitcoindNotifier) notifyBlockEpochClient(epochClient *blockEpochRegistr
 	}
 }
 
+// RegisterSpendNtfn registers an intent to be notified when a target outpoint/
+// output script is spent by a transaction that is included in a block.
+func (b *BitcoindNotifier) RegisterSpendNtfn(outpoint *wire.OutPoint,
+	pkScript []byte, heightHint uint32) (*chainntnfs.SpendEvent, error) {
+
+	return b.registerSpendNtfn(outpoint, pkScript, heightHint, false)
+}
+
 // RegisterSpendNtfn registers an intent to be notified once the target
 // outpoint/output script has been spent by a transaction on-chain. When
 // intending to be notified of the spend of an output script, a nil outpoint
@@ -618,15 +625,20 @@ func (b *BitcoindNotifier) notifyBlockEpochClient(epochClient *blockEpochRegistr
 // chain of the transaction that spent the outpoint/output script.
 //
 // Once a spend of has been detected, the details of the spending event will be
-// sent across the 'Spend' channel.
-func (b *BitcoindNotifier) RegisterSpendNtfn(outpoint *wire.OutPoint,
-	pkScript []byte, heightHint uint32) (*chainntnfs.SpendEvent, error) {
+// sent across the 'Spend' channel. The mempool bool is used to determine
+// whether we want to be notified when a spend first appears in the mempool.
+// Otherwise, spends will be notified when the transaction has one confirmation.
+func (b *BitcoindNotifier) registerSpendNtfn(outpoint *wire.OutPoint,
+	pkScript []byte, heightHint uint32, mempool bool) (
+	*chainntnfs.SpendEvent, error) {
 
 	// Register the conf notification with the TxNotifier. A non-nil value
 	// for `dispatch` will be returned if we are required to perform a
 	// manual scan for the confirmation. Otherwise the notifier will begin
 	// watching at tip for the transaction to confirm.
-	ntfn, err := b.txNotifier.RegisterSpend(outpoint, pkScript, heightHint)
+	ntfn, err := b.txNotifier.RegisterSpend(
+		outpoint, pkScript, heightHint, mempool,
+	)
 	if err != nil {
 		return nil, err
 	}

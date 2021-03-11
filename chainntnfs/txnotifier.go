@@ -302,13 +302,22 @@ type SpendRequest struct {
 	// PkScript is the script of the outpoint. If a zero outpoint is set,
 	// then this can be an arbitrary script.
 	PkScript txscript.PkScript
+
+	// Mempool indicates whether we want to be notified when a spend arrives
+	// in the mempool, rather than in a block.
+	Mempool bool
 }
 
 // NewSpendRequest creates a request for a spend notification of either an
 // outpoint or output script. A nil outpoint or an allocated ZeroOutPoint can be
 // used to dispatch the confirmation notification on the script.
-func NewSpendRequest(op *wire.OutPoint, pkScript []byte) (SpendRequest, error) {
-	var r SpendRequest
+func NewSpendRequest(op *wire.OutPoint, pkScript []byte,
+	mempool bool) (SpendRequest, error) {
+
+	r := SpendRequest{
+		Mempool: mempool,
+	}
+
 	outputScript, err := txscript.ParsePkScript(pkScript)
 	if err != nil {
 		return r, err
@@ -960,7 +969,7 @@ func (n *TxNotifier) newSpendNtfn(outpoint *wire.OutPoint,
 	}
 
 	// Ensure the output script is of a supported type.
-	spendRequest, err := NewSpendRequest(outpoint, pkScript)
+	spendRequest, err := NewSpendRequest(outpoint, pkScript, false)
 	if err != nil {
 		return nil, err
 	}
@@ -985,7 +994,7 @@ func (n *TxNotifier) newSpendNtfn(outpoint *wire.OutPoint,
 // the UpdateSpendDetails method, otherwise we will wait for the outpoint/output
 // script to be spent at tip, even though it already has.
 func (n *TxNotifier) RegisterSpend(outpoint *wire.OutPoint, pkScript []byte,
-	heightHint uint32) (*SpendRegistration, error) {
+	heightHint uint32, mempool bool) (*SpendRegistration, error) {
 
 	select {
 	case <-n.quit:
@@ -1178,6 +1187,14 @@ func (n *TxNotifier) ProcessRelevantSpendTx(tx *btcutil.Tx,
 	// After the transaction has been filtered, we can finally dispatch
 	// notifications for each request.
 	for _, spend := range spends {
+		// If the tx is in the mempool, but the spend request was for a
+		// confirmed tx we skip notifying for now and wait for the tx
+		// to arrive in a block.
+		isMempool := blockHeight == 0
+		if isMempool && spend.request.Mempool {
+			continue
+		}
+
 		err := n.updateSpendDetails(*spend.request, spend.details)
 		if err != nil {
 			return err
@@ -1272,21 +1289,28 @@ func (n *TxNotifier) updateSpendDetails(spendRequest SpendRequest,
 	}
 
 	// Now that we've determined the request has been spent, we'll commit
-	// its spending height as its hint in the cache and dispatch
-	// notifications to all of its respective clients.
-	err := n.spendHintCache.CommitSpendHint(
-		uint32(details.SpendingHeight), spendRequest,
-	)
-	if err != nil {
-		// The error is not fatal as this is an optimistic optimization,
-		// so we'll avoid returning an error.
-		Log.Debugf("Unable to update spend hint to %d for %v: %v",
-			details.SpendingHeight, spendRequest, err)
+	// its spending height as its hint if the spend has a non-zero height,
+	// zero height transactions are still in the mempool so we don't know
+	// what height they will be spent at.
+	// TODO(carla): use height +1 so that we have a good starting point?
+	if details.SpendingHeight > 0 {
+		err := n.spendHintCache.CommitSpendHint(
+			uint32(details.SpendingHeight), spendRequest,
+		)
+		if err != nil {
+			// The error is not fatal as this is an optimistic
+			// optimization, so we'll avoid returning an error.
+			Log.Debugf("Unable to update spend hint to %d for "+
+				"%v: %v", details.SpendingHeight, spendRequest,
+				err)
+		}
+
+		Log.Debugf("Updated spend hint to height=%v for confirmed "+
+			"spend request %v", details.SpendingHeight,
+			spendRequest)
 	}
 
-	Log.Debugf("Updated spend hint to height=%v for confirmed spend "+
-		"request %v", details.SpendingHeight, spendRequest)
-
+	// Dispatch notifications to all of the spend's respective clients.
 	spendSet.details = details
 	for _, ntfn := range spendSet.ntfns {
 		err := n.dispatchSpendDetails(ntfn, spendSet.details)

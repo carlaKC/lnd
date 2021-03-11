@@ -683,8 +683,12 @@ func (n *NeutrinoNotifier) RegisterSpendNtfn(outpoint *wire.OutPoint,
 	// Register the conf notification with the TxNotifier. A non-nil value
 	// for `dispatch` will be returned if we are required to perform a
 	// manual scan for the confirmation. Otherwise the notifier will begin
-	// watching at tip for the transaction to confirm.
-	ntfn, err := n.txNotifier.RegisterSpend(outpoint, pkScript, heightHint)
+	// watching at tip for the transaction to confirm. Neutrino does not
+	// support mempool transactions so we hardcode our mempool bool as
+	// false.
+	ntfn, err := n.txNotifier.RegisterSpend(
+		outpoint, pkScript, heightHint, false,
+	)
 	if err != nil {
 		return nil, err
 	}

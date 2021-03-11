@@ -472,12 +472,13 @@ out:
 			// We only care about notifying on confirmed spends, so
 			// if this is a mempool spend, we can ignore it and wait
 			// for the spend to appear in on-chain.
-			if newSpend.details == nil {
-				continue
+			var height uint32
+			if newSpend.details != nil {
+				height = uint32(newSpend.details.Height)
 			}
 
 			err := b.txNotifier.ProcessRelevantSpendTx(
-				newSpend.tx, uint32(newSpend.details.Height),
+				newSpend.tx, height,
 			)
 			if err != nil {
 				chainntnfs.Log.Errorf("Unable to process "+
@@ -676,22 +677,35 @@ func (b *BtcdNotifier) notifyBlockEpochClient(epochClient *blockEpochRegistratio
 	}
 }
 
-// RegisterSpendNtfn registers an intent to be notified once the target
+// RegisterSpendNtfn registers an intent to be notified when a target outpoint/
+// output script is spent by a transaction that is included in a block.
+func (b *BtcdNotifier) RegisterSpendNtfn(outpoint *wire.OutPoint,
+	pkScript []byte, heightHint uint32) (*chainntnfs.SpendEvent, error) {
+
+	return b.registerSpendNtfn(outpoint, pkScript, heightHint, false)
+}
+
+// registerSpendNtfn registers an intent to be notified once the target
 // outpoint/output script has been spent by a transaction on-chain. When
 // intending to be notified of the spend of an output script, a nil outpoint
 // must be used. The heightHint should represent the earliest height in the
 // chain of the transaction that spent the outpoint/output script.
 //
 // Once a spend of has been detected, the details of the spending event will be
-// sent across the 'Spend' channel.
-func (b *BtcdNotifier) RegisterSpendNtfn(outpoint *wire.OutPoint,
-	pkScript []byte, heightHint uint32) (*chainntnfs.SpendEvent, error) {
+// sent across the 'Spend' channel. The mempool bool is used to determine
+// whether we want to be notified when a spend first appears in the mempool.
+// Otherwise, spends will be notified when the transaction has one confirmation.
+func (b *BtcdNotifier) registerSpendNtfn(outpoint *wire.OutPoint,
+	pkScript []byte, heightHint uint32, mempool bool) (
+	*chainntnfs.SpendEvent, error) {
 
 	// Register the conf notification with the TxNotifier. A non-nil value
 	// for `dispatch` will be returned if we are required to perform a
 	// manual scan for the confirmation. Otherwise the notifier will begin
 	// watching at tip for the transaction to confirm.
-	ntfn, err := b.txNotifier.RegisterSpend(outpoint, pkScript, heightHint)
+	ntfn, err := b.txNotifier.RegisterSpend(
+		outpoint, pkScript, heightHint, mempool,
+	)
 	if err != nil {
 		return nil, err
 	}
