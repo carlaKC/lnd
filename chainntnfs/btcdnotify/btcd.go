@@ -685,6 +685,14 @@ func (b *BtcdNotifier) RegisterSpendNtfn(outpoint *wire.OutPoint,
 	return b.registerSpendNtfn(outpoint, pkScript, heightHint, false)
 }
 
+// RegisterMempoolSpendNtfn registers an intent to be notified when a target
+// outpoint/output script is spent by a transaction in the mempool.
+func (b *BtcdNotifier) RegisterMempoolSpendNtfn(outpoint *wire.OutPoint,
+	pkScript []byte, heightHint uint32) (*chainntnfs.SpendEvent, error) {
+
+	return b.registerSpendNtfn(outpoint, pkScript, heightHint, true)
+}
+
 // registerSpendNtfn registers an intent to be notified once the target
 // outpoint/output script has been spent by a transaction on-chain. When
 // intending to be notified of the spend of an output script, a nil outpoint

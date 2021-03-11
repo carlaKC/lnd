@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/btcsuite/btcutil"
+	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/lnwallet"
 )
@@ -68,8 +69,17 @@ func (h *htlcOutgoingContestResolver) Resolve() (ContractResolver, error) {
 	}
 
 	// First, we'll register for a spend notification for this output. If
-	// the remote party sweeps with the pre-image, we'll be notified.
-	spendNtfn, err := h.Notifier.RegisterSpendNtfn(
+	// the remote party sweeps with the pre-image, we'll be notified. Since
+	// we just want to know the preimage, and don't mind whether the remote
+	// party's sweep actually confirms, we register for spends in the
+	// mempool if our backend supports them.
+	registerFunc := h.Notifier.RegisterSpendNtfn
+	mempoolNotifier, ok := h.Notifier.(chainntnfs.MempoolChainNotifier)
+	if ok {
+		registerFunc = mempoolNotifier.RegisterMempoolSpendNtfn
+	}
+
+	spendNtfn, err := registerFunc(
 		outPointToWatch, scriptToWatch, h.broadcastHeight,
 	)
 	if err != nil {

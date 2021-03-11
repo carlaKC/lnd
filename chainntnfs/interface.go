@@ -149,6 +149,22 @@ type ChainNotifier interface {
 	Stop() error
 }
 
+// MempoolChainNotifier is a superset of the ChainNotifier interface which is
+// implemented by backends which notify mempool transactions. This allows us to
+// register for spend notifications as the arrive in the mempool, rather than
+// waiting for them to appear in blocks.
+//
+// NOTE: Spend registrations for mempool transactions should not be relied on
+// for finality, and should only be used in cases where we do not depend on the
+// transaction being confirmed.
+type MempoolChainNotifier interface {
+	ChainNotifier
+
+	RegisterMempoolSpendNtfn(outpoint *wire.OutPoint,
+		pkScript []byte, heightHint uint32) (*SpendEvent,
+		error)
+}
+
 // TxConfirmation carries some additional block-level details of the exact
 // block that specified transactions was confirmed within.
 type TxConfirmation struct {
