@@ -43,6 +43,39 @@
         ]
       }
     },
+    "/v2/router/importhistory": {
+      "post": {
+        "summary": "ImportMissionControl imports the state provided to the internal mission\ncontrol's state, using all results which are more recent than our existing\nvalues. These values will only be imported in-memory, and will not be\npersisted across restarts.",
+        "operationId": "ImportMissionControl",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/routerrpcImportMissionControlResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/routerrpcImportMissionControlRequest"
+            }
+          }
+        ],
+        "tags": [
+          "Router"
+        ]
+      }
+    },
     "/v2/router/mc": {
       "get": {
         "summary": "QueryMissionControl exposes the internal mission control state to callers.\nIt is a development feature.",
@@ -1110,6 +1143,21 @@
           "description": "The amount of the outgoing htlc."
         }
       }
+    },
+    "routerrpcImportMissionControlRequest": {
+      "type": "object",
+      "properties": {
+        "pairs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/routerrpcPairHistory"
+          },
+          "description": "Node pair-level mission control state to be imported."
+        }
+      }
+    },
+    "routerrpcImportMissionControlResponse": {
+      "type": "object"
     },
     "routerrpcLinkFailEvent": {
       "type": "object",
