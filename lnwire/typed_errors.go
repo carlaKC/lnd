@@ -21,6 +21,26 @@ type structuredErrorHelper struct {
 	makeValueRecord func(interface{}, tlv.Type) tlv.Record
 }
 
+func make32ByteRecord(val interface{}, tlvType tlv.Type) tlv.Record {
+	byteSliceVal := val.([32]byte)
+	return tlv.MakePrimitiveRecord(tlvType, &byteSliceVal)
+}
+
+func makeUint64Record(val interface{}, tlvType tlv.Type) tlv.Record {
+	int64Val := val.(uint64)
+	return tlv.MakePrimitiveRecord(tlvType, &int64Val)
+}
+
+func makeUint32Record(val interface{}, tlvType tlv.Type) tlv.Record {
+	uint32Val := val.(uint32)
+	return tlv.MakePrimitiveRecord(tlvType, &uint32Val)
+}
+
+func makeUint16Record(val interface{}, tlvType tlv.Type) tlv.Record {
+	uint32Val := val.(uint32)
+	return tlv.MakePrimitiveRecord(tlvType, &uint32Val)
+}
+
 // supportedStructuredError contains a map of specification message types to
 // helpers for each of the fields in that message for which we understand
 // structured errors. If a message is not contained in this map, we do not
@@ -29,7 +49,61 @@ type structuredErrorHelper struct {
 // Field number is defined as follows:
 // * For fixed fields: 0-based index of the field as defined in #BOLT 1
 // * For TLV fields: number of fixed fields + TLV field number
-var supportedStructuredError = map[MessageType]map[uint16]structuredErrorHelper{}
+var supportedStructuredError = map[MessageType]map[uint16]structuredErrorHelper{
+	MsgOpenChannel: map[uint16]structuredErrorHelper{
+		0: structuredErrorHelper{
+			fieldName: "chain hash",
+			// todo - use here.
+			makeValueRecord: make32ByteRecord,
+		},
+		1: structuredErrorHelper{
+			fieldName:       "channel id",
+			makeValueRecord: make32ByteRecord,
+		},
+		2: structuredErrorHelper{
+			fieldName:       "funding sats",
+			makeValueRecord: makeUint64Record,
+		},
+		3: structuredErrorHelper{
+			fieldName:       "push amount",
+			makeValueRecord: makeUint64Record,
+		},
+		4: structuredErrorHelper{
+			fieldName:       "dust limit sat",
+			makeValueRecord: makeUint64Record,
+		},
+		5: structuredErrorHelper{
+			fieldName:       "max htlc value in flight msat",
+			makeValueRecord: makeUint64Record,
+		},
+		6: structuredErrorHelper{
+			fieldName:       "channel reserve",
+			makeValueRecord: makeUint64Record,
+		},
+		7: structuredErrorHelper{
+			fieldName:       "htlc minimum msat",
+			makeValueRecord: makeUint64Record,
+		},
+		8: structuredErrorHelper{
+			fieldName:       "feerate per kw",
+			makeValueRecord: makeUint32Record,
+		},
+		9: structuredErrorHelper{
+			fieldName:       "to self delay",
+			makeValueRecord: makeUint16Record,
+		},
+		10: structuredErrorHelper{
+			fieldName:       "max accepted htlcs",
+			makeValueRecord: makeUint16Record,
+		},
+	},
+	MsgAcceptChannel: map[uint16]structuredErrorHelper{
+		5: structuredErrorHelper{
+			fieldName:       "min depth",
+			makeValueRecord: makeUint32Record,
+		},
+	},
+}
 
 // StrucutredError contains structured error information for an error.
 type StructuredError struct {
