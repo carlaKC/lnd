@@ -21,6 +21,15 @@ const (
 	// SynchronizingChain indicates that the peer is still busy syncing
 	// the latest state of the blockchain.
 	SynchronizingChain ErrorCode = 3
+
+	// MaxPendingHtlcsExceeded indicates that the remote peer has tried to
+	// add more htlcs that our local policy allows to a commitment.
+	MaxPendingHtlcsExceeded = 5
+
+	// MaxPendingAmountExceeded indicates that the remote peer has tried to
+	// add more than our pending amount in flight local policy limit to a
+	// commitment.
+	MaxPendingAmountExceeded = 7
 )
 
 // ErrorCode is an enum that represents errors that cannot be represented using
@@ -35,6 +44,12 @@ func (e ErrorCode) String() string {
 
 	case SynchronizingChain:
 		return "Synchronizing blockchain"
+
+	case MaxPendingHtlcsExceeded:
+		return "commitment exceeds max htlcs"
+
+	case MaxPendingAmountExceeded:
+		return "commitment exceeds max in flight value"
 
 	default:
 		return string(e)
