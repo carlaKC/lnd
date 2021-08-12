@@ -257,6 +257,13 @@ var supportedStructuredError = map[MessageType]map[uint16]*errFieldHelper{
 			decode:    decodeU32,
 		},
 	},
+	MsgUpdateAddHTLC: map[uint16]*errFieldHelper{
+		2: &errFieldHelper{
+			fieldName: "htlc amount",
+			encode:    encodeU64,
+			decode:    decodeU64,
+		},
+	},
 }
 
 // Compile time assertion that StructuredError implements the error interface.
