@@ -523,14 +523,7 @@ func testMaxPendingChannels(net *lntest.NetworkHarness, t *harnessTest) {
 			Amt: amount,
 		},
 	)
-
-	if err == nil {
-		t.Fatalf("error wasn't received")
-	} else if !strings.Contains(
-		err.Error(), lnwire.ErrMaxPendingChannels.Error(),
-	) {
-		t.Fatalf("not expected error was received: %v", err)
-	}
+	require.Equal(t.t, lnwire.NewCodedError(lnwire.MaxPendingChannels), err)
 
 	// For now our channels are in pending state, in order to not interfere
 	// with other tests we should clean up - complete opening of the

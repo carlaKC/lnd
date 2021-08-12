@@ -11,6 +11,16 @@ import (
 // are used to enrich the meaning of errors.
 type ErrorCode uint16
 
+const (
+	// MaxPendingChannels indicates that the number of active pending
+	// channels exceeds their maximum policy limit.
+	MaxPendingChannels ErrorCode = 1
+
+	// SynchronizingChain indicates that the peer is still busy syncing
+	// the latest state of the blockchain.
+	SynchronizingChain ErrorCode = 3
+)
+
 // Compile time assertion that CodedError implements the ExtendedError
 // interface.
 var _ ExtendedError = (*CodedError)(nil)
@@ -31,7 +41,20 @@ func NewCodedError(e ErrorCode) *CodedError {
 
 // Error provides a string representation of a coded error.
 func (e *CodedError) Error() string {
-	return fmt.Sprintf("Error code: %d", e.ErrorCode)
+	var errStr string
+
+	switch e.ErrorCode {
+	case MaxPendingChannels:
+		errStr = "number of pending channels exceed maximum"
+
+	case SynchronizingChain:
+		errStr = "synchronizing blockchain"
+
+	default:
+		errStr = "unknown"
+	}
+
+	return fmt.Sprintf("Error code: %d: %v", e.ErrorCode, errStr)
 }
 
 // Record provides a tlv record for coded errors.
