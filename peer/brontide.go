@@ -2639,14 +2639,9 @@ func (p *Brontide) handleLinkFailure(failure linkFailureReport) {
 
 	// Send an error to the peer, why we failed the channel.
 	if failure.linkErr.ShouldSendToPeer() {
-		// If SendData is set, send it to the peer. If not, we'll use
-		// the standard error messages in the payload. We only include
-		// sendData in the cases where the error data does not contain
-		// sensitive information.
-		data := []byte(failure.linkErr.Error())
-		if failure.linkErr.SendData != nil {
-			data = failure.linkErr.SendData
-		}
+		// Use error message from link error as data, this should not
+		// contain sensitive information.
+		data := []byte(failure.linkErr.Error.Error())
 		err := p.SendMessage(true, &lnwire.Error{
 			ChanID: failure.chanID,
 			Data:   data,

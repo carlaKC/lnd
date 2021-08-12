@@ -50,8 +50,8 @@ const (
 // force close the channel in the process, and if any error data should be sent
 // to the peer.
 type LinkFailureError struct {
-	// code is the type of error this LinkFailureError encapsulates.
-	code errorCode
+	// Error is the error this LinkFailureError encapsulates.
+	Error error
 
 	// ForceClose indicates whether we should force close the channel
 	// because of this error.
@@ -60,21 +60,17 @@ type LinkFailureError struct {
 	// PermanentFailure indicates whether this failure is permanent, and
 	// the channel should not be attempted loaded again.
 	PermanentFailure bool
-
-	// SendData is a byte slice that will be sent to the peer. If nil a
-	// generic error will be sent.
-	SendData []byte
 }
 
-// A compile time check to ensure LinkFailureError implements the error
+// A compile time check to ensure errorCode implements the error
 // interface.
-var _ error = (*LinkFailureError)(nil)
+var _ error = (*errorCode)(nil)
 
-// Error returns a generic error for the LinkFailureError.
+// Error returns a generic error for error codes.
 //
 // NOTE: Part of the error interface.
-func (e LinkFailureError) Error() string {
-	switch e.code {
+func (e errorCode) Error() string {
+	switch e {
 	case ErrInternalError:
 		return "internal error"
 	case ErrRemoteError:
@@ -99,7 +95,7 @@ func (e LinkFailureError) Error() string {
 // ShouldSendToPeer indicates whether we should send an error to the peer if
 // the link fails with this LinkFailureError.
 func (e LinkFailureError) ShouldSendToPeer() bool {
-	switch e.code {
+	switch e.Error {
 
 	// Since sending an error can lead some nodes to force close the
 	// channel, create a whitelist of the failures we want to send so that
