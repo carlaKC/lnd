@@ -113,6 +113,31 @@ type StructuredError struct {
 	erroneousValue interface{}
 }
 
+// TODO(carla): find a cleaner way to expose these.
+func (s *StructuredError) MessageType() (MessageType, bool) {
+	if s.messageType == nil {
+		return 0, false
+	}
+
+	return *s.messageType, true
+}
+
+func (s *StructuredError) FieldNumber() (uint16, bool) {
+	if s.fieldNumber == nil {
+		return 0, false
+	}
+
+	return *s.fieldNumber, true
+}
+
+func (s *StructuredError) SuggestedValue() interface{} {
+	return s.suggestedValue
+}
+
+func (s *StructuredError) ErroneousValue() interface{} {
+	return s.erroneousValue
+}
+
 // Error returns an error string for our structured errors, including the
 // suggested value if it is present.
 func (s *StructuredError) Error() string {
