@@ -12,7 +12,12 @@ const (
 	typeFieldNum       tlv.Type = 3
 	typeSuggestedValue tlv.Type = 5
 	typeErroneousValue tlv.Type = 7
+	typeErrorCode      tlv.Type = 9
 )
+
+// ErrorCode is an enum that represents errors that cannot be represented using
+// the erroneous message/field structure.
+type ErrorCode uint8
 
 // structuredErrorHelper has the functionality we need to create structured
 // errors.
@@ -111,6 +116,7 @@ type StructuredError struct {
 	fieldNumber    *uint16
 	suggestedValue interface{}
 	erroneousValue interface{}
+	errorCode      *ErrorCode
 }
 
 // TODO(carla): find a cleaner way to expose these.
@@ -167,6 +173,11 @@ func (s *StructuredError) Error() string {
 			s.suggestedValue))
 	}
 
+	if s.errorCode != nil {
+		errStrs = append(errStrs, fmt.Sprintf("error code: %v",
+			*s.errorCode))
+	}
+
 	return strings.Join(errStrs, ", ")
 }
 
@@ -197,6 +208,16 @@ func NewStructuredError(messageType MessageType, fieldNumber uint16,
 	}
 }
 
+// NewCodedError creates a structured error containing an error code.
+func NewCodedError(messageType MessageType,
+	errorCode ErrorCode) *StructuredError {
+
+	return &StructuredError{
+		errorCode:   &errorCode,
+		messageType: &messageType,
+	}
+}
+
 // ToWireError creates an error containing TLV fields that are used to point
 // the recipient towards problematic field values.
 func (s *StructuredError) ToWireError(chanID ChannelID) *Error {
@@ -206,6 +227,12 @@ func (s *StructuredError) ToWireError(chanID ChannelID) *Error {
 	}
 
 	var records []tlv.Record
+
+	if s.errorCode != nil {
+		errCode := *s.errorCode
+		record := tlv.MakePrimitiveRecord(typeErrorCode, &errCode)
+		records = append(records, record)
+	}
 
 	if s.messageType != nil {
 		msgType := uint16(*s.messageType)
@@ -264,11 +291,16 @@ func StructuredErrorFromWire(err *Error) (*StructuredError, error) {
 		return nil, nil
 	}
 
-	// First we try to extract our message and field number records.
-	var messageType, fieldNr uint16
+	// First we try to extract our message and field number records and
+	// an error code if it is present.
+	var (
+		messageType, fieldNr uint16
+		errorCode            uint8
+	)
 	records := []tlv.Record{
 		tlv.MakePrimitiveRecord(typeMessageType, &messageType),
 		tlv.MakePrimitiveRecord(typeFieldNum, &fieldNr),
+		tlv.MakePrimitiveRecord(typeErrorCode, &errorCode),
 	}
 
 	tlvs, extractErr := err.ExtraData.ExtractRecords(records...)
@@ -276,15 +308,39 @@ func StructuredErrorFromWire(err *Error) (*StructuredError, error) {
 		return nil, extractErr
 	}
 
-	// If we don't know the problematic message type, we can't add any
-	// additional information to this error.
-	if _, ok := tlvs[typeMessageType]; !ok {
-		return nil, nil
-	}
+	var (
+		_, errCodeSet = tlvs[typeErrorCode]
+		_, msgTypeSet = tlvs[typeMessageType]
 
-	msgType := MessageType(messageType)
-	structuredErr := &StructuredError{
-		messageType: &msgType,
+		errCode = ErrorCode(errorCode)
+		msgType = MessageType(messageType)
+
+		structuredErr = &StructuredError{}
+	)
+
+	switch {
+	// If an error code and message type are set, we can continue to
+	// parse more fields.
+	case errCodeSet && msgTypeSet:
+		structuredErr.errorCode = &errCode
+		structuredErr.messageType = &msgType
+
+	// If only error code is set, we just return a structured error with
+	// the error code provided, we don't have a message type so we can't
+	// get more information.
+	case errCodeSet:
+		return &StructuredError{
+			errorCode: &errCode,
+		}, nil
+
+	// If only message type is set, we can continue to parse field info.
+	case msgTypeSet:
+		structuredErr.messageType = &msgType
+
+	// If neither are set, we can't get any information from this set of
+	// tlvs.
+	default:
+		return nil, nil
 	}
 
 	// If a field number was not specified, there is no further information
