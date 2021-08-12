@@ -130,6 +130,12 @@ var supportedStructuredError = map[MessageType]map[uint16]structuredErrorHelper{
 			makeValueRecord: makeUint32Record,
 		},
 	},
+	MsgUpdateAddHTLC: map[uint16]structuredErrorHelper{
+		2: structuredErrorHelper{
+			fieldName:       "htlc amount",
+			makeValueRecord: makeUint64Record,
+		},
+	},
 }
 
 // StrucutredError contains structured error information for an error.
