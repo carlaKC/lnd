@@ -13,11 +13,33 @@ const (
 	typeSuggestedValue tlv.Type = 5
 	typeErroneousValue tlv.Type = 7
 	typeErrorCode      tlv.Type = 9
+
+	// MaxPendingChannels indicates that the number of active pending
+	// channels exceeds their maximum policy limit.
+	MaxPendingChannels ErrorCode = 1
+
+	// SynchronizingChain indicates that the peer is still busy syncing
+	// the latest state of the blockchain.
+	SynchronizingChain ErrorCode = 3
 )
 
 // ErrorCode is an enum that represents errors that cannot be represented using
 // the erroneous message/field structure.
 type ErrorCode uint8
+
+// String returns a string representation of an error code.
+func (e ErrorCode) String() string {
+	switch e {
+	case MaxPendingChannels:
+		return "Number of pending channels exceed maximum"
+
+	case SynchronizingChain:
+		return "Synchronizing blockchain"
+
+	default:
+		return string(e)
+	}
+}
 
 // structuredErrorHelper has the functionality we need to create structured
 // errors.
