@@ -36,16 +36,6 @@ type erroneousField struct {
 	value       []byte
 }
 
-// supportedStructuredError contains a map of specification message types to
-// helpers for each of the fields in that message for which we understand
-// structured errors. If a message is not contained in this map, we do not
-// understand structured errors for that message or field.
-//
-// Field number is defined as follows:
-// * For fixed fields: 0-based index of the field as defined in #BOLT 1
-// * For TLV fields: number of fixed fields + TLV field number
-var supportedStructuredError = map[MessageType]map[uint16]*errFieldHelper{}
-
 // getFieldHelper looks up the helper struct for a message/ field combination
 // in our map of known structured errors, returning a nil struct if the
 // combination is unknown.
@@ -156,6 +146,113 @@ func createErrFieldRecord(value *erroneousField) tlv.Record {
 		typeErroneousField, value, sizeFunc,
 		encodeErroneousField, decodeErroneousField,
 	)
+}
+
+func encode32Byte(val interface{}) ([]byte, error) {
+	return nil, nil
+}
+
+func decode32Byte(val []byte) (interface{}, error) {
+	return nil, nil
+}
+
+func encodeU16(val interface{}) ([]byte, error) {
+	return nil, nil
+}
+
+func decodeU16(val []byte) (interface{}, error) {
+	return nil, nil
+}
+
+func encodeU32(val interface{}) ([]byte, error) {
+	return nil, nil
+}
+
+func decodeU32(val []byte) (interface{}, error) {
+	return nil, nil
+}
+
+func encodeU64(val interface{}) ([]byte, error) {
+	return nil, nil
+}
+
+func decodeU64(val []byte) (interface{}, error) {
+	return nil, nil
+}
+
+// supportedStructuredError contains a map of specification message types to
+// helpers for each of the fields in that message for which we understand
+// structured errors. If a message is not contained in this map, we do not
+// understand structured errors for that message or field.
+//
+// Field number is defined as follows:
+// * For fixed fields: 0-based index of the field as defined in #BOLT 1
+// * For TLV fields: number of fixed fields + TLV field number
+var supportedStructuredError = map[MessageType]map[uint16]*errFieldHelper{
+	MsgOpenChannel: map[uint16]*errFieldHelper{
+		0: &errFieldHelper{
+			fieldName: "chain hash",
+			encode:    encode32Byte,
+			decode:    decode32Byte,
+		},
+		1: &errFieldHelper{
+			fieldName: "channel id",
+			encode:    encode32Byte,
+			decode:    decode32Byte,
+		},
+		2: &errFieldHelper{
+			fieldName: "funding sats",
+			encode:    encodeU64,
+			decode:    decodeU64,
+		},
+		3: &errFieldHelper{
+			fieldName: "push amount",
+			encode:    encodeU64,
+			decode:    decodeU64,
+		},
+		4: &errFieldHelper{
+			fieldName: "dust limit",
+			encode:    encodeU64,
+			decode:    decodeU64,
+		},
+		5: &errFieldHelper{
+			fieldName: "max htlc value in flight msat",
+			encode:    encodeU64,
+			decode:    decodeU64,
+		},
+		6: &errFieldHelper{
+			fieldName: "channel reserve",
+			encode:    encodeU64,
+			decode:    decodeU64,
+		},
+		7: &errFieldHelper{
+			fieldName: "htlc minimum msat",
+			encode:    encodeU64,
+			decode:    decodeU64,
+		},
+		8: &errFieldHelper{
+			fieldName: "feerate per kw",
+			encode:    encodeU32,
+			decode:    decodeU32,
+		},
+		9: &errFieldHelper{
+			fieldName: "to self delay",
+			encode:    encodeU16,
+			decode:    decodeU16,
+		},
+		10: &errFieldHelper{
+			fieldName: "max accepted htlcs",
+			encode:    encodeU16,
+			decode:    decodeU16,
+		},
+	},
+	MsgAcceptChannel: map[uint16]*errFieldHelper{
+		5: &errFieldHelper{
+			fieldName: "min depth",
+			encode:    encodeU32,
+			decode:    decodeU32,
+		},
+	},
 }
 
 // Compile time assertion that StructuredError implements the error interface.
