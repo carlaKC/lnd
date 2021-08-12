@@ -955,6 +955,7 @@ func (l *channelLink) htlcManager() {
 			// The remote sent us a commit point different from
 			// what they sent us before.
 			// TODO(halseth): ban peer?
+			// TODO[carla] best way to surface error here?
 			case err == lnwallet.ErrInvalidLocalUnrevokedCommitPoint:
 				// We'll fail the link and tell the peer to
 				// force close the channel. Note that the
