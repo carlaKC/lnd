@@ -19,12 +19,12 @@ type SessionSource struct {
 	// and also to carry out path finding queries.
 	Graph *channeldb.ChannelGraph
 
-	// QueryBandwidth is a method that allows querying the lower link layer
+	// GetLink is a method that allows querying the lower link layer
 	// to determine the up to date available bandwidth at a prospective link
 	// to be traversed. If the link isn't available, then a value of zero
 	// should be returned. Otherwise, the current up to date knowledge of
 	// the available bandwidth of the link should be returned.
-	QueryBandwidth func(*channeldb.ChannelEdgeInfo) lnwire.MilliSatoshi
+	GetLink getLinkQuery
 
 	// MissionControl is a shared memory of sorts that executions of payment
 	// path finding use in order to remember which vertexes/edges were
@@ -67,10 +67,8 @@ func (m *SessionSource) NewPaymentSession(p *LightningPayment) (
 		return nil, err
 	}
 
-	getBandwidthHints := func() (map[uint64]lnwire.MilliSatoshi,
-		error) {
-
-		return generateBandwidthHints(sourceNode, m.QueryBandwidth)
+	getBandwidthHints := func() (bandwidthHints, error) {
+		return newBandwidthManager(sourceNode, m.GetLink)
 	}
 
 	session, err := newPaymentSession(
