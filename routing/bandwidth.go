@@ -12,8 +12,13 @@ import (
 type bandwidthHints interface {
 	// availableChanBandwidth returns the total available bandwidth for a
 	// channel and a bool indicating whether the channel hint was found.
-	// If the channel is unavailable, a zero amount is returned.
-	availableChanBandwidth(channelID uint64) (lnwire.MilliSatoshi, bool)
+	// The amount parameter is used to validate the outgoing htlc amount
+	// that we wish to add to the channel against its flow restrictions. If
+	// a zero amount is provided, the minimum htlc value for the channel
+	// will be used. If the channel is unavailable, a zero amount is
+	// returned.
+	availableChanBandwidth(channelID uint64,
+		amount lnwire.MilliSatoshi) (lnwire.MilliSatoshi, bool)
 }
 
 // getLinkQuery is the function signature used to lookup a link.
@@ -64,7 +69,9 @@ func newBandwidthManager(sourceNode *channeldb.LightningNode,
 // available bandwidth. Note that this function assumes that the channel being
 // queried is one of our local channels, so any failure to retrieve the link
 // is interpreted as the link being offline.
-func (b *bandwidthManager) getBandwidth(cid lnwire.ChannelID) lnwire.MilliSatoshi {
+func (b *bandwidthManager) getBandwidth(cid lnwire.ChannelID,
+	amount lnwire.MilliSatoshi) lnwire.MilliSatoshi {
+
 	link, err := b.getLink(cid)
 	if err != nil {
 		// If the link isn't online, then we'll report that it has
@@ -81,7 +88,7 @@ func (b *bandwidthManager) getBandwidth(cid lnwire.ChannelID) lnwire.MilliSatosh
 
 	// If our link isn't currently in a state where it can  add another
 	// outgoing htlc, treat the link as unusable.
-	if err := link.MayAddOutgoingHtlc(); err != nil {
+	if err := link.MayAddOutgoingHtlc(amount); err != nil {
 		return 0
 	}
 
@@ -93,13 +100,13 @@ func (b *bandwidthManager) getBandwidth(cid lnwire.ChannelID) lnwire.MilliSatosh
 // availableChanBandwidth returns the total available bandwidth for a channel
 // and a bool indicating whether the channel hint was found. If the channel is
 // unavailable, a zero amount is returned.
-func (b *bandwidthManager) availableChanBandwidth(channelID uint64) (
-	lnwire.MilliSatoshi, bool) {
+func (b *bandwidthManager) availableChanBandwidth(channelID uint64,
+	amount lnwire.MilliSatoshi) (lnwire.MilliSatoshi, bool) {
 
 	channel, ok := b.localChans[channelID]
 	if !ok {
 		return 0, false
 	}
 
-	return b.getBandwidth(channel), true
+	return b.getBandwidth(channel, amount), true
 }
