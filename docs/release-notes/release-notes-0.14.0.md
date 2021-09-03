@@ -187,6 +187,8 @@ you.
 
 * [Removed nested db tx](https://github.com/lightningnetwork/lnd/pull/5643)
 
+* [Include htlc amount in bandwidth hints](https://github.com/lightningnetwork/lnd/pull/5512).
+
 ## Database
 
 * [Ensure single writer for legacy
@@ -244,7 +246,7 @@ change](https://github.com/lightningnetwork/lnd/pull/5613).
 
 # Contributors (Alphabetical Order)
 * Andras Banki-Horvath
-* de6df1re
+* Carla Kirk-Cohen
 * ErikEk
 * Eugene Siegel
 * Martin Habovstiak
