@@ -109,7 +109,7 @@ var (
 func CreateTestChannels(chanType channeldb.ChannelType) (
 	*LightningChannel, *LightningChannel, func(), error) {
 
-	channelCapacity, err := btcutil.NewAmount(10)
+	channelCapacity, err := btcutil.NewAmount(testChannelCapacity)
 	if err != nil {
 		return nil, nil, nil, err
 	}
