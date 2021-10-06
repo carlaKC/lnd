@@ -3,6 +3,8 @@ package itest
 import (
 	"strings"
 
+	"github.com/lightningnetwork/lnd/lnwire"
+
 	"github.com/btcsuite/btcutil"
 	"github.com/lightningnetwork/lnd/funding"
 	"github.com/lightningnetwork/lnd/lntest"
@@ -46,7 +48,12 @@ func testWumboChannels(net *lntest.NetworkHarness, t *harnessTest) {
 
 	// The test should indicate a failure due to the channel being too
 	// large.
-	if !strings.Contains(err.Error(), "exceeds maximum chan size") {
+	expectedErr := lnwire.NewErroneousFieldErr(
+		lnwire.MsgOpenChannel, 2, uint64(chanAmt),
+		uint64(funding.MaxBtcFundingAmount),
+	)
+
+	if !strings.Contains(err.Error(), expectedErr.Error()) {
 		t.Fatalf("channel should be rejected due to size, instead "+
 			"error was: %v", err)
 	}
