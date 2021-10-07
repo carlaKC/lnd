@@ -317,6 +317,13 @@ func NewInvalidCommitSigError(commitHeight uint64, commitSig, sigHash,
 	}
 }
 
+// String returns a string representing an invalid sig error.
+func (i *InvalidCommitSigError) String() string {
+	return fmt.Sprintf("rejected commitment: commit_height=%v, "+
+		"invalid_commit_sig=%x, commit_tx=%x, sig_hash=%x",
+		i.commitHeight, i.commitSig, i.commitTx, i.sigHash)
+}
+
 // Records returns a set of record producers for the tlvs associated
 // with an enriched error.
 func (i *InvalidCommitSigError) Records() []tlv.Record {
@@ -359,6 +366,13 @@ func NewInvalidHtlcSigError(commitHeight, htlcIndex uint64, htlcSig, sigHash,
 			commitTx:     commitTx,
 		},
 	}
+}
+
+// String returns a string representing an invalid htlc sig error.
+func (i *InvalidHtlcSigError) String() string {
+	return fmt.Sprintf("rejected commitment: commit_height=%v, "+
+		"invalid_htlc_sig=%x, commit_tx=%x, sig_hash=%x",
+		i.commitHeight, i.htlcSig, i.commitTx, i.sigHash)
 }
 
 // Records returns a set of record producers for the tlvs associated with
@@ -651,6 +665,16 @@ func NewErroneousFieldErr(messageType MessageType, fieldNumber uint16,
 	}
 
 	return codedErr
+}
+
+// MessageType returns the bolt message type that an error is for.
+func (e *ErroneousFieldErr) MessageType() MessageType {
+	return e.messageType
+}
+
+// FieldNumber returns the 0-based field number that an error is for.
+func (e *ErroneousFieldErr) FieldNumber() uint16 {
+	return e.fieldNumber
 }
 
 // ErroneousValue returns the erroneous value for an error. If the value is not

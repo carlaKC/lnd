@@ -1560,6 +1560,53 @@ func (p *Brontide) storeError(err error) {
 //
 // NOTE: This method should only be called from within the readHandler.
 func (p *Brontide) handleError(msg *lnwire.Error) bool {
+	// Since we don't have any handling of additional error fields yet,
+	// just log the values here so that we know we can process them.
+	// TODO(carla): remove this!
+
+	sErr, err := lnwire.ExtendedErrorFromWire(msg)
+	if err != nil {
+		peerLog.Infof("Could not get structured error: %v", err)
+	}
+
+	switch s := sErr.(type) {
+	case *lnwire.CodedError:
+		// TODO(carla): create better strings here
+		switch t := s.ErrContext.(type) {
+		case *lnwire.ErroneousFieldErr:
+			errVal, err := t.ErroneousValue()
+			if err != nil {
+				peerLog.Infof("Could not get erroneous "+
+					"value: %v", err)
+			}
+
+			sugVal, err := t.SuggestedValue()
+			if err != nil {
+				peerLog.Infof("Could not get suggested "+
+					"value: %v", err)
+			}
+
+			peerLog.Infof("Structured error for message: %v, "+
+				"field %v, problem value: %v, suggested "+
+				"value: %v ", t.MessageType(), t.FieldNumber(),
+				errVal, sugVal)
+
+		case *lnwire.InvalidCommitSigError:
+			peerLog.Infof("Coded error: %v, %v", s.ErrorCode, t)
+
+		case *lnwire.InvalidHtlcSigError:
+			peerLog.Infof("Coded error: %v, %v", s.ErrorCode, t)
+
+		case nil:
+			peerLog.Infof("Received coded error: %v/ %d with "+
+				"no additional context", s.ErrorCode,
+				s.ErrorCode)
+		}
+
+	case nil:
+		peerLog.Info("No additional fields provided with error")
+	}
+
 	// Store the error we have received.
 	p.storeError(msg)
 
