@@ -53,6 +53,14 @@ const (
 	// ErrInvalidRevocation indicates that the remote peer send us an
 	// invalid revocation message.
 	ErrInvalidRevocation ErrorCode = 19
+
+	// ErrInvalidCommitSig indicates that we have received an invalid
+	// commitment signature.
+	ErrInvalidCommitSig ErrorCode = 21
+
+	// ErrInvalidHtlcSig indicates that we have received an invalid htlc
+	// signature.
+	ErrInvalidHtlcSig ErrorCode = 23
 )
 
 // Compile time assertion that CodedError implements the ExtendedError
@@ -111,6 +119,13 @@ func (e *CodedError) Error() string {
 	case ErrInvalidRevocation:
 		errStr = "invalid revocation"
 
+	// TODO(carla): better error string here using other info?
+	case ErrInvalidCommitSig:
+		errStr = "invalid commit sig"
+
+	case ErrInvalidHtlcSig:
+		errStr = "invalid htlc sig"
+
 	default:
 		errStr = "unknown"
 	}
@@ -128,7 +143,10 @@ type ErrContext interface {
 
 // knownErrorCodeContext maps known error codes to additional information that
 // is included in tlvs.
-var knownErrorCodeContext = map[ErrorCode]ErrContext{}
+var knownErrorCodeContext = map[ErrorCode]ErrContext{
+	ErrInvalidCommitSig: &InvalidCommitSigError{},
+	ErrInvalidHtlcSig:   &InvalidHtlcSigError{},
+}
 
 // Record provides a tlv record for coded errors.
 func (e *CodedError) Record() tlv.Record {
@@ -261,4 +279,88 @@ func codedErrorDecoder(r io.Reader, val interface{}, buf *[8]byte,
 	}
 
 	return tlv.NewTypeForEncodingErr(val, "lnwire.CodedError")
+}
+
+// InvalidCommitSigError contains the error information we transmit upon
+// receiving an invalid commit signature
+type InvalidCommitSigError struct {
+	commitHeight uint64
+	commitSig    []byte
+	sigHash      []byte
+	commitTx     []byte
+}
+
+// A compile time flag to ensure that InvalidCommitSigError implements the
+// ErrContext interface.
+var _ ErrContext = (*InvalidCommitSigError)(nil)
+
+// NewInvalidCommitSigError creates an invalid sig error.
+func NewInvalidCommitSigError(commitHeight uint64, commitSig, sigHash,
+	commitTx []byte) *CodedError {
+
+	return &CodedError{
+		ErrorCode: ErrInvalidCommitSig,
+		ErrContext: &InvalidCommitSigError{
+			commitHeight: commitHeight,
+			commitSig:    commitSig,
+			sigHash:      sigHash,
+			commitTx:     commitTx,
+		},
+	}
+}
+
+// Records returns a set of record producers for the tlvs associated
+// with an enriched error.
+func (i *InvalidCommitSigError) Records() []tlv.Record {
+	return []tlv.Record{
+		tlv.MakePrimitiveRecord(typeNestedCommitHeight, &i.commitHeight),
+		tlv.MakePrimitiveRecord(typeNestedCommitSig, &i.commitSig),
+		tlv.MakePrimitiveRecord(typeNestedSigHash, &i.sigHash),
+		tlv.MakePrimitiveRecord(typeNestedCommitTx, &i.commitTx),
+	}
+}
+
+// InvalidHtlcSigError is a struct that implements the error interface to
+// report a failure to validate an htlc signature from a remote peer. We'll use
+// the items in this struct to generate a rich error message for the remote
+// peer when we receive an invalid signature from it. Doing so can greatly aide
+// in debugging across implementation issues.
+type InvalidHtlcSigError struct {
+	commitHeight uint64
+	htlcSig      []byte
+	htlcIndex    uint64
+	sigHash      []byte
+	commitTx     []byte
+}
+
+// A compile time flag to ensure that InvalidHtlcSigError implements the
+// ErrContext interface.
+var _ ErrContext = (*InvalidHtlcSigError)(nil)
+
+// NewInvalidHtlcSigError creates an invalid htlc signature error.
+func NewInvalidHtlcSigError(commitHeight, htlcIndex uint64, htlcSig, sigHash,
+	commitTx []byte) *CodedError {
+
+	return &CodedError{
+		ErrorCode: ErrInvalidHtlcSig,
+		ErrContext: &InvalidHtlcSigError{
+			commitHeight: commitHeight,
+			htlcIndex:    htlcIndex,
+			htlcSig:      htlcSig,
+			sigHash:      sigHash,
+			commitTx:     commitTx,
+		},
+	}
+}
+
+// Records returns a set of record producers for the tlvs associated with
+// an enriched error.
+func (i *InvalidHtlcSigError) Records() []tlv.Record {
+	return []tlv.Record{
+		tlv.MakePrimitiveRecord(typeNestedCommitHeight, &i.commitHeight),
+		tlv.MakePrimitiveRecord(typeNestedHtlcIndex, &i.htlcIndex),
+		tlv.MakePrimitiveRecord(typeNestedHtlcSig, &i.htlcSig),
+		tlv.MakePrimitiveRecord(typeNestedSigHash, &i.sigHash),
+		tlv.MakePrimitiveRecord(typeNestedCommitTx, &i.commitTx),
+	}
 }
