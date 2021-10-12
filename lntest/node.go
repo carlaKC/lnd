@@ -196,6 +196,10 @@ type BackendConfig interface {
 
 	// Name returns the name of the backend type.
 	Name() string
+
+	// Credentials returns the rpc username, password and host for the
+	// backend.
+	Credentials() (string, string, string, error)
 }
 
 type NodeConfig struct {

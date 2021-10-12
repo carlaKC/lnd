@@ -72,6 +72,11 @@ func (b BtcdBackendConfig) Name() string {
 	return "btcd"
 }
 
+// Credentials returns the rpc username, password and host for the backend.
+func (b BtcdBackendConfig) Credentials() (string, string, string, error) {
+	return b.rpcConfig.User, b.rpcConfig.Pass, b.rpcConfig.Host, nil
+}
+
 // NewBackend starts a new rpctest.Harness and returns a BtcdBackendConfig for
 // that node. miner should be set to the P2P address of the miner to connect
 // to.

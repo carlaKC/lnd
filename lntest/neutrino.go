@@ -47,6 +47,12 @@ func (b NeutrinoBackendConfig) Name() string {
 	return NeutrinoBackendName
 }
 
+// Credentials returns the rpc username, password and host for the backend.
+// For neutrino, we return an error because there is no rpc client available.
+func (b NeutrinoBackendConfig) Credentials() (string, string, string, error) {
+	return "", "", "", fmt.Errorf("unimplemented")
+}
+
 // NewBackend starts and returns a NeutrinoBackendConfig for the node.
 func NewBackend(miner string, _ *chaincfg.Params) (
 	*NeutrinoBackendConfig, func() error, error) {
