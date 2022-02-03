@@ -248,6 +248,10 @@ var allTestCases = []*testCase{
 		test: testHoldInvoiceForceClose,
 	},
 	{
+		name: "hold invoice hints",
+		test: testHoldHopHints,
+	},
+	{
 		name: "commitment deadline",
 		test: testCommitmentTransactionDeadline,
 	},
