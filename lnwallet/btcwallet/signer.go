@@ -352,7 +352,7 @@ func (b *BtcWallet) SignOutputRaw(tx *wire.MsgTx,
 	// If a tweak (single or double) is specified, then we'll need to use
 	// this tweak to derive the final private key to be used for signing
 	// this output.
-	privKey, err = maybeTweakPrivKey(signDesc, privKey)
+	privKeyTweaked, err := maybeTweakPrivKey(signDesc, privKey)
 	if err != nil {
 		return nil, err
 	}
@@ -363,17 +363,38 @@ func (b *BtcWallet) SignOutputRaw(tx *wire.MsgTx,
 		sigHashes := txscript.NewTxSigHashes(
 			tx, signDesc.PrevOutputFetcher,
 		)
-		leaf := txscript.TapLeaf{
-			LeafVersion: txscript.BaseLeafVersion,
-			Script:      witnessScript,
-		}
-		rawSig, err := txscript.RawTxInTapscriptSignature(
-			tx, sigHashes, signDesc.InputIndex,
-			signDesc.Output.Value, signDesc.Output.PkScript,
-			leaf, signDesc.HashType, privKey,
-		)
-		if err != nil {
-			return nil, err
+
+		// Are we spending a script path or the key path? The API is
+		// slightly different, so we need to account for that to get the
+		// raw signature.
+		var rawSig []byte
+		if signDesc.TaprootKeySpend {
+			// This function tweaks the private key using the tap
+			// root key supplied as the tweak. So we pass in the
+			// original private key to avoid it being double
+			// tweaked!
+			rawSig, err = txscript.RawTxInTaprootSignature(
+				tx, sigHashes, signDesc.InputIndex,
+				signDesc.Output.Value, signDesc.Output.PkScript,
+				signDesc.SingleTweak, signDesc.HashType,
+				privKey,
+			)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			leaf := txscript.TapLeaf{
+				LeafVersion: txscript.BaseLeafVersion,
+				Script:      witnessScript,
+			}
+			rawSig, err = txscript.RawTxInTapscriptSignature(
+				tx, sigHashes, signDesc.InputIndex,
+				signDesc.Output.Value, signDesc.Output.PkScript,
+				leaf, signDesc.HashType, privKeyTweaked,
+			)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		sig, err := schnorr.ParseSignature(rawSig)
@@ -389,7 +410,7 @@ func (b *BtcWallet) SignOutputRaw(tx *wire.MsgTx,
 	amt := signDesc.Output.Value
 	sig, err := txscript.RawTxInWitnessSignature(
 		tx, signDesc.SigHashes, signDesc.InputIndex, amt,
-		witnessScript, signDesc.HashType, privKey,
+		witnessScript, signDesc.HashType, privKeyTweaked,
 	)
 	if err != nil {
 		return nil, err

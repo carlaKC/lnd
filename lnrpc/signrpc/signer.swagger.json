@@ -340,6 +340,10 @@
           "type": "integer",
           "format": "int32",
           "description": "The target input within the transaction that should be signed."
+        },
+        "taproot_key_spend": {
+          "type": "boolean",
+          "description": "Indicates that this should produce a signature that can be used for the key\nspend path of a taproot input. This requires the single_tweak field to be\nset to the taproot root hash (in case of a tapscript output) or the tap\nhashed internal public key (in case of a BIP-0086 output)."
         }
       }
     },
