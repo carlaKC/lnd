@@ -81,6 +81,11 @@ replace github.com/gogo/protobuf => github.com/gogo/protobuf v1.3.2
 // https://github.com/lightninglabs/neutrino/pull/247 is merged.
 replace github.com/lightninglabs/neutrino => github.com/lightninglabs/neutrino v0.13.2-0.20220209052920-0c79b771272b
 
+// TODO: remove once https://github.com/btcsuite/btcd/pull/1820 is merged.
+// This replace points btcec/v2 to roasbeef/btcd/btcec/musig2 branch with the
+// musig2 package.
+replace github.com/btcsuite/btcd/btcec/v2 => github.com/roasbeef/btcd/btcec/v2 v2.0.0-20220319002645-d17d9062f5bb
+
 // If you change this please also update .github/pull_request_template.md and
 // docs/INSTALL.md.
 go 1.16
