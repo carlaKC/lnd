@@ -585,6 +585,7 @@ func (p *Brontide) Start() error {
 	go p.readHandler()
 	go p.channelManager()
 	go p.pingHandler()
+	go p.testWarnings()
 
 	// Signal to any external processes that the peer is now active.
 	close(p.activeSignal)
@@ -614,6 +615,34 @@ func (p *Brontide) Start() error {
 	p.maybeSendNodeAnn(activeChans)
 
 	return nil
+}
+
+func (p *Brontide) testWarnings() {
+	peerLog.Infof("CKC - starting test warnings loop")
+	defer peerLog.Infof("CKC - ending test warnings loop")
+
+	i := 0
+	for {
+		select {
+		case <-time.After(time.Second * 5):
+			peerLog.Infof("CKC - sending warning after 5 second sleep")
+
+			warningNoChan := &lnwire.Warning{
+				Error: lnwire.Error{
+					Data: lnwire.ErrorData(
+						fmt.Sprintf("test %v", i),
+					),
+				},
+			}
+
+			p.SendMessage(true, warningNoChan)
+			i++
+
+		case <-p.quit:
+			peerLog.Infof("CKC - testwarnings exiting on p.quit")
+			return
+		}
+	}
 }
 
 // initGossipSync initializes either a gossip syncer or an initial routing
