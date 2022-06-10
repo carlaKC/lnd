@@ -54,6 +54,10 @@ type UpdateAddHTLC struct {
 	// used in the subsequent UpdateAddHTLC message.
 	OnionBlob [OnionPacketSize]byte
 
+	// BlindingPoint is the ephemeral pubkey used to optionally blind the
+	// next hop for this htlc.
+	BlindingPoint *blindingPoint
+
 	// ExtraData is the set of data that was appended to this message to
 	// fill out the full maximum transport message size. These fields can
 	// be used to specify optional data such as custom TLV fields.
@@ -74,7 +78,7 @@ var _ Message = (*UpdateAddHTLC)(nil)
 //
 // This is part of the lnwire.Message interface.
 func (c *UpdateAddHTLC) Decode(r io.Reader, pver uint32) error {
-	return ReadElements(r,
+	if err := ReadElements(r,
 		&c.ChanID,
 		&c.ID,
 		&c.Amount,
@@ -82,7 +86,27 @@ func (c *UpdateAddHTLC) Decode(r io.Reader, pver uint32) error {
 		&c.Expiry,
 		c.OnionBlob[:],
 		&c.ExtraData,
-	)
+	); err != nil {
+		return err
+	}
+
+	var blindingPoint blindingPoint
+	tlvMap, err := c.ExtraData.ExtractRecords(&blindingPoint)
+	if err != nil {
+		return err
+	}
+
+	if _, ok := tlvMap[BlindingPointRecordType]; ok {
+		c.BlindingPoint = &blindingPoint
+	}
+
+	// Set extra data to nil if we didn't parse anything out of it so that
+	// we can use assert.Equal in tests.
+	if len(tlvMap) == 0 {
+		c.ExtraData = nil
+	}
+
+	return nil
 }
 
 // Encode serializes the target UpdateAddHTLC into the passed io.Writer
@@ -112,6 +136,14 @@ func (c *UpdateAddHTLC) Encode(w *bytes.Buffer, pver uint32) error {
 
 	if err := WriteBytes(w, c.OnionBlob[:]); err != nil {
 		return err
+	}
+
+	// Only include blinding point in extra data if present.
+	if c.BlindingPoint != nil {
+		err := EncodeMessageExtraData(&c.ExtraData, c.BlindingPoint)
+		if err != nil {
+			return err
+		}
 	}
 
 	return WriteBytes(w, c.ExtraData)
