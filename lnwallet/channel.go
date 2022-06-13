@@ -373,6 +373,12 @@ type PaymentDescriptor struct {
 	// into the log to the HTLC being modified.
 	EntryType updateType
 
+	// BlindingKey is an optionally provided blinding key that is used to
+	// unwrap the onion if the payment is part of a blinded route. This
+	// field will only be set for EntryType=Add, because only incoming htlcs
+	// contain blinding keys for the corresponding outgoing htlc.
+	BlindingKey *btcec.PublicKey
+
 	// isForwarded denotes if an incoming HTLC has been forwarded to any
 	// possible upstream peers in the route.
 	isForwarded bool
@@ -416,6 +422,7 @@ func PayDescsFromRemoteLogUpdates(chanID lnwire.ShortChannelID, height uint64,
 					Height: height,
 					Index:  uint16(i),
 				},
+				BlindingKey: wireMsg.BlindingPoint.PublicKey,
 			}
 			pd.OnionBlob = make([]byte, len(wireMsg.OnionBlob))
 			copy(pd.OnionBlob[:], wireMsg.OnionBlob[:])
@@ -861,6 +868,8 @@ func (lc *LightningChannel) diskHtlcToPayDesc(feeRate chainfee.SatPerKWeight,
 		ourWitnessScript:   ourWitnessScript,
 		theirPkScript:      theirP2WSH,
 		theirWitnessScript: theirWitnessScript,
+		// TODO(carla): Figure out whether we need to recover blinding
+		// key here.
 	}
 
 	return pd, nil
@@ -1447,6 +1456,8 @@ func (lc *LightningChannel) logUpdateToPayDesc(logUpdate *channeldb.LogUpdate,
 			HtlcIndex:             wireMsg.ID,
 			LogIndex:              logUpdate.LogIndex,
 			addCommitHeightRemote: commitHeight,
+			// TODO(carla): figure out whether we need blinding key
+			// here.
 		}
 		pd.OnionBlob = make([]byte, len(wireMsg.OnionBlob))
 		copy(pd.OnionBlob[:], wireMsg.OnionBlob[:])
@@ -1644,6 +1655,8 @@ func (lc *LightningChannel) remoteLogUpdateToPayDesc(logUpdate *channeldb.LogUpd
 			HtlcIndex:            wireMsg.ID,
 			LogIndex:             logUpdate.LogIndex,
 			addCommitHeightLocal: commitHeight,
+			// TODO(carla): figure out whether we need to recover
+			// blinding key here.
 		}
 		pd.OnionBlob = make([]byte, len(wireMsg.OnionBlob))
 		copy(pd.OnionBlob, wireMsg.OnionBlob[:])
@@ -5298,6 +5311,8 @@ func (lc *LightningChannel) htlcAddDescriptor(htlc *lnwire.UpdateAddHTLC,
 		HtlcIndex:      lc.localUpdateLog.htlcCounter,
 		OnionBlob:      htlc.OnionBlob[:],
 		OpenCircuitKey: openKey,
+		// TODO(carla): figure out whether we need to recover blinding
+		// key here.
 	}
 }
 
@@ -5353,6 +5368,8 @@ func (lc *LightningChannel) ReceiveHTLC(htlc *lnwire.UpdateAddHTLC) (uint64, err
 		LogIndex:  lc.remoteUpdateLog.logIndex,
 		HtlcIndex: lc.remoteUpdateLog.htlcCounter,
 		OnionBlob: htlc.OnionBlob[:],
+		// TODO(carla): figure out whether we need to recover blinding
+		// key here.
 	}
 
 	localACKedIndex := lc.remoteCommitChain.tail().ourMessageIndex
