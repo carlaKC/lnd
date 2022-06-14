@@ -119,12 +119,13 @@ func NewLegacyPayload(f *sphinx.HopData) *Payload {
 // should correspond to the bytes encapsulated in a TLV onion payload.
 func NewPayloadFromReader(r io.Reader) (*Payload, error) {
 	var (
-		cid      uint64
-		amt      uint64
-		cltv     uint32
-		mpp      = &record.MPP{}
-		amp      = &record.AMP{}
-		metadata []byte
+		cid           uint64
+		amt           uint64
+		cltv          uint32
+		mpp           = &record.MPP{}
+		amp           = &record.AMP{}
+		encryptedData []byte
+		metadata      []byte
 	)
 
 	tlvStream, err := tlv.NewStream(
@@ -132,6 +133,7 @@ func NewPayloadFromReader(r io.Reader) (*Payload, error) {
 		record.NewLockTimeRecord(&cltv),
 		record.NewNextHopIDRecord(&cid),
 		mpp.Record(),
+		record.NewEncryptedDataRecord(&encryptedData),
 		amp.Record(),
 		record.NewMetadataRecord(&metadata),
 	)
@@ -230,6 +232,9 @@ func ValidateParsedPayloadTypes(parsedTypes tlv.TypeMap,
 	_, hasNextHop := parsedTypes[record.NextHopOnionType]
 	_, hasMPP := parsedTypes[record.MPPOnionType]
 	_, hasAMP := parsedTypes[record.AMPOnionType]
+
+	// TODO - figure out how to do validation here
+	//_, hasBlob := parsedTypes[record.EncryptedDataType]
 
 	switch {
 

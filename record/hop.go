@@ -17,6 +17,10 @@ const (
 	// of the next hop.
 	NextHopOnionType tlv.Type = 6
 
+	// EncryptedDataType is the typed used in the onion to include
+	// recipient-generated blobs of data for blinded routes.
+	EncryptedDataType tlv.Type = 10
+
 	// MetadataOnionType is the type used in the onion for the payment
 	// metadata.
 	MetadataOnionType tlv.Type = 16
@@ -48,6 +52,12 @@ func NewLockTimeRecord(lockTime *uint32) tlv.Record {
 // (type 6) for an onion payload.
 func NewNextHopIDRecord(cid *uint64) tlv.Record {
 	return tlv.MakePrimitiveRecord(NextHopOnionType, cid)
+}
+
+// NewEncryptedDataRecord creates a tlv.Record that encodes the
+// encrypted_recipient_data (type 10) for an onion payload.
+func NewEncryptedDataRecord(data *[]byte) tlv.Record {
+	return tlv.MakePrimitiveRecord(EncryptedDataType, data)
 }
 
 // NewMetadataRecord creates a tlv.Record that encodes the metadata (type 10)
