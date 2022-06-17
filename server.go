@@ -501,8 +501,14 @@ func newServer(cfg *Config, listenAddrs []net.Addr,
 	replayLog := htlcswitch.NewDecayedLog(
 		dbs.DecayedLogDB, cc.ChainNotifier,
 	)
+
+	// Create a keychain that the router can use for ecdh and scalar
+	// multiplication with our node privkey.
+	sphinxKeychain := keychain.NewRouterKeychain(
+		*nodeKeyDesc, cc.KeyRing,
+	)
 	sphinxRouter := sphinx.NewRouter(
-		nodeKeyECDH, cfg.ActiveNetParams.Params, replayLog,
+		sphinxKeychain, cfg.ActiveNetParams.Params, replayLog,
 	)
 
 	writeBufferPool := pool.NewWriteBuffer(

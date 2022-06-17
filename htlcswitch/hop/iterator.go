@@ -384,7 +384,7 @@ func (p *OnionProcessor) ExtractErrorEncrypter(ephemeralKey *btcec.PublicKey) (
 	ErrorEncrypter, lnwire.FailCode) {
 
 	onionObfuscator, err := sphinx.NewOnionErrorEncrypter(
-		p.router, ephemeralKey,
+		p.router, ephemeralKey, nil,
 	)
 	if err != nil {
 		switch err {

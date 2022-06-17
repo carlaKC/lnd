@@ -167,6 +167,10 @@ replace github.com/ulikunitz/xz => github.com/ulikunitz/xz v0.5.8
 // https://deps.dev/advisory/OSV/GO-2021-0053?from=%2Fgo%2Fgithub.com%252Fgogo%252Fprotobuf%2Fv1.3.1
 replace github.com/gogo/protobuf => github.com/gogo/protobuf v1.3.2
 
+// This replace points LND to carlakc/bolts-765-forwarderlogic which contains
+// the logic required for forwarding blinded routes.
+replace github.com/lightningnetwork/lightning-onion => github.com/carlakc/lightning-onion v1.2.1-0.20220617120333-909eb8012e89
+
 // If you change this please also update .github/pull_request_template.md and
 // docs/INSTALL.md.
 go 1.17
