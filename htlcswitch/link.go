@@ -2792,11 +2792,10 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 			// which process the Sphinx packet.
 			onionReader := bytes.NewReader(pd.OnionBlob)
 
-			req := hop.DecodeHopIteratorRequest{
-				OnionReader:  onionReader,
-				RHash:        pd.RHash[:],
-				IncomingCltv: pd.Timeout,
-			}
+			req := hop.NewDecodeHopIteratorRequest(
+				onionReader, pd.RHash[:], pd.Timeout,
+				pd.BlindingKey,
+			)
 
 			decodeReqs = append(decodeReqs, req)
 		}

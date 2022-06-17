@@ -176,6 +176,24 @@ type DecodeHopIteratorRequest struct {
 	OnionReader  io.Reader
 	RHash        []byte
 	IncomingCltv uint32
+
+	// BlindingKey is an ephemeral key used to override the ephemeral key
+	// provided in the onion. This is optionally provided when an onion is
+	// part of a blinded route.
+	BlindingKey *btcec.PublicKey
+}
+
+// NewDecodeHopIteratorRequest creates a DecodeHopIteratorRequest.
+func NewDecodeHopIteratorRequest(onionReader io.Reader,
+	rHash []byte, incomingCltv uint32,
+	blindingKey *btcec.PublicKey) DecodeHopIteratorRequest {
+
+	return DecodeHopIteratorRequest{
+		OnionReader:  onionReader,
+		RHash:        rHash,
+		IncomingCltv: incomingCltv,
+		BlindingKey:  blindingKey,
+	}
 }
 
 // DecodeHopIteratorResponse encapsulates the outcome of a batched sphinx onion
@@ -229,6 +247,15 @@ func (p *OnionProcessor) DecodeHopIterators(id []byte,
 		default:
 			log.Errorf("unable to decode onion packet: %v", err)
 			return lnwire.CodeInvalidOnionKey
+		}
+
+		// Blinding keys are not part of the onion packet, so we set
+		// our blinding key here (if one is present) so that it can
+		// be used to decrypt the onion blob.
+		if req.BlindingKey != nil {
+			onionPkt.BlindingKey = req.BlindingKey
+			log.Infof("Blinding key present for packet: %v, "+
+				"hash: %x", seqNum, req.RHash)
 		}
 
 		err = tx.ProcessOnionPacket(
