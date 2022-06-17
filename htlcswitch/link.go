@@ -2948,6 +2948,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 					Expiry:      fwdInfo.OutgoingCTLV,
 					Amount:      fwdInfo.AmountToForward,
 					PaymentHash: pd.RHash,
+					// TODO: add next ephemeral key
 				}
 
 				// Finally, we'll encode the onion packet for
@@ -2990,6 +2991,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				Expiry:      fwdInfo.OutgoingCTLV,
 				Amount:      fwdInfo.AmountToForward,
 				PaymentHash: pd.RHash,
+				// TODO: add next ephemeral key
 			}
 
 			// Finally, we'll encode the onion packet for the
