@@ -92,7 +92,7 @@ func (r *sphinxHopIterator) HopPayload() (*Payload, error) {
 	case sphinx.PayloadTLV:
 		return NewPayloadFromReader(bytes.NewReader(
 			r.processedPacket.Payload.Payload,
-		))
+		), r.processedPacket.DecryptBlob)
 
 	default:
 		return nil, fmt.Errorf("unknown sphinx payload type: %v",

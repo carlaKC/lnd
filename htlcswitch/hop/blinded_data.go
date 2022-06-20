@@ -1,10 +1,14 @@
 package hop
 
 import (
+	"bytes"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"io"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	sphinx "github.com/lightningnetwork/lightning-onion"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/tlv"
 )
@@ -26,11 +30,95 @@ const (
 	paymentConstraintsType tlv.Type = 12
 )
 
+var (
+	errNoBlindingPoint = errors.New("encrypted data provided without " +
+		"blinding point")
+
+	errNoData = errors.New("blinding point provided without encrypted " +
+		"data")
+)
+
+// parseEncryptedData validates that we have a valid combination of blinding key
+// and encrypted data, and decrypts/ parses the encrypted data if possible.
+func parseEncryptedData(data []byte,
+	blobDecrypt sphinx.BlobDecrypt) (*blindedRouteData, error) {
+
+	var (
+		// Empty data means that there was no blob provided.
+		haveBlob = len(data) != 0
+
+		// A nil closure indicates that we didn't have a blinding key
+		// that could be used to decrypt the blob.
+		haveKey = blobDecrypt != nil
+
+		decryptedBlob []byte
+		err           error
+	)
+
+	switch {
+	// We have encrypted data and the ability to decrypt it, do so. Once
+	// we have decrypted the data successfully, fall through to the rest of
+	// our logic.
+	case haveBlob && haveKey:
+		decryptedBlob, err = blobDecrypt(data)
+		if err != nil {
+			return nil, fmt.Errorf("could not decrypt blob: %v", err)
+		}
+
+	// Data was provided without a key - invalid.
+	case haveBlob:
+		return nil, errNoBlindingPoint
+
+	// A blinding key was provided without data - invalid.
+	case haveKey:
+		return nil, errNoData
+
+	// We have neither data nor a key, this is the regular, non-blinded path
+	// case. Exit with no forwarding information returned.
+	default:
+		return nil, nil
+	}
+
+	// We have managed to decrypt the blob.
+	routeData, err := decodeBlindedRouteData(
+		bytes.NewReader(decryptedBlob),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := routeData.validateForPayment(); err != nil {
+		return nil, fmt.Errorf("invalid route data: %v", err)
+	}
+
+	return routeData, nil
+}
+
 type blindedRouteData struct {
 	shortChannelID *lnwire.ShortChannelID
 	nextNodeID     *btcec.PublicKey
 	relayInfo      *paymentRelayInfo
 	constraints    *paymentConstraints
+}
+
+// validateForPayment validates that the fields required for payment forwarding
+// are set by blinded route data.
+func (b *blindedRouteData) validateForPayment() error {
+	// MUST set short_channel_id.
+	if b.shortChannelID == nil {
+		return errors.New("short channel ID required for blinded " +
+			"payments")
+	}
+
+	// MUST set payment_relay.
+	if b.relayInfo == nil {
+		return errors.New("relay info required for blinded payments")
+	}
+
+	// MUST NOT set path_id for intermediate nodes.
+	// TODO - parse path_id and check shortChannelID == Exit
+
+	return nil
 }
 
 func decodeBlindedRouteData(r io.Reader) (*blindedRouteData, error) {

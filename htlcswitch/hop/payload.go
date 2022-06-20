@@ -117,7 +117,9 @@ func NewLegacyPayload(f *sphinx.HopData) *Payload {
 
 // NewPayloadFromReader builds a new Hop from the passed io.Reader. The reader
 // should correspond to the bytes encapsulated in a TLV onion payload.
-func NewPayloadFromReader(r io.Reader) (*Payload, error) {
+func NewPayloadFromReader(r io.Reader, decryptor sphinx.BlobDecrypt) (*Payload,
+	error) {
+
 	var (
 		cid           uint64
 		amt           uint64
@@ -182,16 +184,41 @@ func NewPayloadFromReader(r io.Reader) (*Payload, error) {
 		metadata = nil
 	}
 
+	fwdInfo := ForwardingInfo{
+		Network:         BitcoinNetwork,
+		NextHop:         nextHop,
+		AmountToForward: lnwire.MilliSatoshi(amt),
+		OutgoingCTLV:    cltv,
+	}
+	// If an encrypted blob was provided, validate that we were expecting
+	// one and extract forwarding information.
+	routeData, err := parseEncryptedData(
+		encryptedData, decryptor,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// If route data was provided in an encrypted blob, validate the
+	// payload against it and extract our relay params. We can only do this
+	// *after* we have decrypted the blob, because we need to check some of
+	// the tlvs in the blob.
+	if routeData != nil {
+		// TODO
+		// - check outer vs inner TLVs
+		// - extact actual values
+
+		// We're probably going to have to do this outside on this FN,
+		// because we don't have the incoming amount / expiry around here.
+		// `amount = ceil((100302 - fee_base_msat) / (1 + fee_proportional_millionths)) = 100152 msat`
+		// `expiry = 1388 - cltv_expiry_delta = 1244`
+	}
+
 	// Filter out the custom records.
 	customRecords := NewCustomRecords(parsedTypes)
 
 	return &Payload{
-		FwdInfo: ForwardingInfo{
-			Network:         BitcoinNetwork,
-			NextHop:         nextHop,
-			AmountToForward: lnwire.MilliSatoshi(amt),
-			OutgoingCTLV:    cltv,
-		},
+		FwdInfo:       fwdInfo,
 		MPP:           mpp,
 		AMP:           amp,
 		metadata:      metadata,
@@ -280,6 +307,16 @@ func ValidateParsedPayloadTypes(parsedTypes tlv.TypeMap,
 			FinalHop:  isFinalHop,
 		}
 	}
+
+	return nil
+}
+
+// validatePayloadWithBlob validates the fields included in a hop payload
+// against the information provided in a route blinding encrypted blob.
+func validatePayloadWithBlob(parsedTypes tlv.TypeMap,
+	routeData *blindedRouteData) error {
+
+	// should not have amt_to_forward / outgoing_cltv_value for intermediate
 
 	return nil
 }
