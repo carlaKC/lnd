@@ -14,6 +14,7 @@ require (
 	github.com/btcsuite/btcwallet/wallet/txrules v1.2.0
 	github.com/btcsuite/btcwallet/walletdb v1.4.0
 	github.com/btcsuite/btcwallet/wtxmgr v1.5.0
+	github.com/carlakc/boltnd v0.0.0-20220727073537-c037674375c3
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f
 	github.com/davecgh/go-spew v1.1.1
 	github.com/dvyukov/go-fuzz v0.0.0-20210602112143-b1f3d6f4ef4e
@@ -95,13 +96,13 @@ require (
 	github.com/jackc/puddle v1.1.3 // indirect
 	github.com/jonboulle/clockwork v0.2.2 // indirect
 	github.com/json-iterator/go v1.1.11 // indirect
-	github.com/juju/errors v0.0.0-20220622220526-54a94488269b // indirect
 	github.com/juju/loggo v0.0.0-20210728185423-eebad3a902c4 // indirect
 	github.com/juju/testing v0.0.0-20220203020004-a0ff61f03494 // indirect
 	github.com/klauspost/compress v1.13.6 // indirect
 	github.com/klauspost/pgzip v1.2.5 // indirect
 	github.com/lib/pq v1.10.3 // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
+	github.com/lightninglabs/lndclient v0.15.0-10 // indirect
 	github.com/mattn/go-runewidth v0.0.13 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
 	github.com/mholt/archiver/v3 v3.5.0 // indirect
@@ -124,6 +125,7 @@ require (
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7 // indirect
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20201229170055-e5319fda7802 // indirect
 	github.com/ulikunitz/xz v0.5.10 // indirect
+	github.com/xdg-go/stringprep v1.0.3 // indirect
 	github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8 // indirect
 	github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2 // indirect
 	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec // indirect
@@ -168,12 +170,10 @@ replace github.com/ulikunitz/xz => github.com/ulikunitz/xz v0.5.8
 // https://deps.dev/advisory/OSV/GO-2021-0053?from=%2Fgo%2Fgithub.com%252Fgogo%252Fprotobuf%2Fv1.3.1
 replace github.com/gogo/protobuf => github.com/gogo/protobuf v1.3.2
 
-// This is a version of lndclient that includes custom messaging wrappers and
-// points to a version of lnd that includes lightning-onion with route blinding.
-replace github.com/lightninglabs/lndclient => github.com/carlakc/lndclient v0.0.0-20220713074502-e96658c3c290
-
 // This is a version of lightning-onion that includes route blinding.
 replace github.com/lightningnetwork/lightning-onion => github.com/ellemouton/lightning-onion v1.2.1-0.20220705120409-2f7de78cffba
+
+replace github.com/lightninglabs/lndclient => github.com/carlakc/lndclient v0.0.0-20220713074502-e96658c3c290
 
 // If you change this please also update .github/pull_request_template.md and
 // docs/INSTALL.md.
