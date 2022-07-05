@@ -1,5 +1,5 @@
-//go:build !bolt12
-// +build !bolt12
+//go:build bolt12
+// +build bolt12
 
 package main
 
