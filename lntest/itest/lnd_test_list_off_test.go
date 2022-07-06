@@ -1,5 +1,5 @@
-//go:build !rpctest
-// +build !rpctest
+//go:build !rpctest && !bolt12
+// +build !rpctest,!bolt12
 
 package itest
 
