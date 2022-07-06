@@ -407,4 +407,8 @@ var allTestCases = []*testCase{
 		name: "resolution handoff",
 		test: testResHandoff,
 	},
+	{
+		name: "custom messaging",
+		test: testCustomMessage,
+	},
 }
