@@ -39,6 +39,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc/routerrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/signrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
+	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing"
 	"github.com/lightningnetwork/lnd/signal"
 	"github.com/lightningnetwork/lnd/tor"
@@ -1640,6 +1641,11 @@ func ValidateConfig(cfg Config, interceptor signal.Interceptor, fileParser,
 			cfg.Invoices.HoldExpiryDelta,
 			lncfg.DefaultIncomingBroadcastDelta)
 	}
+
+	// If the experimental protocol options specify any protocol messages
+	// that we want to handle as custom messages, set them now.
+	customMsg := cfg.ProtocolOptions.ExperimentalProtocol.CustomMessageOverrides()
+	lnwire.SetCustomOverrides(customMsg)
 
 	// Validate the subconfigs for workers, caches, and the tower client.
 	err = lncfg.Validate(
