@@ -409,6 +409,10 @@ type LightningClient interface {
 	// lncli: `subscribecustom`
 	//SubscribeCustomMessages subscribes to a stream of incoming custom peer
 	//messages.
+	//
+	//To include messages with type outside of the custom range (>= 32768) lnd
+	//needs to be compiled with  the `dev` build tag, and the message type to
+	//override should be specified in lnd's experimental protocol configuration.
 	SubscribeCustomMessages(ctx context.Context, in *SubscribeCustomMessagesRequest, opts ...grpc.CallOption) (Lightning_SubscribeCustomMessagesClient, error)
 }
 
@@ -1697,6 +1701,10 @@ type LightningServer interface {
 	// lncli: `subscribecustom`
 	//SubscribeCustomMessages subscribes to a stream of incoming custom peer
 	//messages.
+	//
+	//To include messages with type outside of the custom range (>= 32768) lnd
+	//needs to be compiled with  the `dev` build tag, and the message type to
+	//override should be specified in lnd's experimental protocol configuration.
 	SubscribeCustomMessages(*SubscribeCustomMessagesRequest, Lightning_SubscribeCustomMessagesServer) error
 	mustEmbedUnimplementedLightningServer()
 }
