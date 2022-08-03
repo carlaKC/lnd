@@ -175,6 +175,8 @@ replace github.com/lightningnetwork/lightning-onion => github.com/ellemouton/lig
 
 replace github.com/lightninglabs/lndclient => github.com/carlakc/lndclient v0.0.0-20220713074502-e96658c3c290
 
+replace github.com/carlakc/boltnd => /Users/carla/Work/boltnd
+
 // If you change this please also update .github/pull_request_template.md and
 // docs/INSTALL.md.
 go 1.17
