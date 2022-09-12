@@ -540,8 +540,13 @@ func findPath(g *graphParams, r *RestrictParams, cfg *PathFindingConfig,
 	for vertex, outgoingEdgePolicies := range g.additionalEdges {
 		// Build reverse lookup to find incoming edges. Needed because
 		// search is taken place from target to source.
+		if vertex == self {
+			continue
+		}
+
 		for _, outgoingEdgePolicy := range outgoingEdgePolicies {
 			toVertex := outgoingEdgePolicy.ToNodePubKey()
+
 			incomingEdgePolicy := &edgePolicyWithSource{
 				sourceNode: vertex,
 				edge:       outgoingEdgePolicy,
