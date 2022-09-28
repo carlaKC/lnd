@@ -46,6 +46,11 @@
   skipped by specifying `skip_peer_alias_lookup`. `lncli fwdinghistory` also 
   adds a flag `skip_peer_alias_lookup` to skip the lookup.
 
+## Bug fixes
+
+* [Fixed a bug where paying an invoice with a malformed route hint triggers a
+  never-ending retry loop](https://github.com/lightningnetwork/lnd/pull/6766)
+
 ## Wallet
 
 * [Allows Taproot public keys and tap scripts to be imported as watch-only
@@ -183,6 +188,7 @@ details.
 
 # Contributors (Alphabetical Order)
 
+* andreihod
 * Carla Kirk-Cohen
 * cutiful
 * Daniel McNally
@@ -194,6 +200,7 @@ details.
 * Jesse de Wit
 * Joost Jager
 * Jordi Montes
+* lsunsi
 * Matt Morehouse
 * Michael Street
 * Olaoluwa Osuntokun
