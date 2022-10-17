@@ -31,6 +31,10 @@ type Config struct {
 	// NoKeysend unsets any bits signaling support for accepting keysend
 	// payments.
 	NoKeysend bool
+
+	// CustomFeatures is a set of features bits provided in config that the
+	// node should advertise.
+	CustomFeatures []lnwire.FeatureBit
 }
 
 // Manager is responsible for generating feature vectors for different requested
@@ -124,6 +128,14 @@ func newManager(cfg Config, desc setDesc) (*Manager, error) {
 		if cfg.NoKeysend {
 			raw.Unset(lnwire.KeysendOptional)
 			raw.Unset(lnwire.KeysendRequired)
+		}
+
+		// If any custom features are included, add them to our vector.
+		for _, feature := range cfg.CustomFeatures {
+			if err := raw.SafeSet(feature); err != nil {
+				return nil, fmt.Errorf("unable to add custom "+
+					"feature: %v", feature)
+			}
 		}
 
 		// Ensure that all of our feature sets properly set any
