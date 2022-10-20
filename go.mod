@@ -182,6 +182,10 @@ replace github.com/gogo/protobuf => github.com/gogo/protobuf v1.3.2
 // allows us to specify that as an option.
 replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-display v1.30.0-hex-display
 
+// This replace points us to a version of lightning-onion that supports
+// route blinding (PR #57).
+replace github.com/lightningnetwork/lightning-onion => github.com/ellemouton/lightning-onion v1.2.1-0.20230126071019-d0b521d925bc
+
 // If you change this please also update .github/pull_request_template.md and
 // docs/INSTALL.md.
 go 1.19
