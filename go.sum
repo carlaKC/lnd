@@ -166,6 +166,8 @@ github.com/dsnet/compress v0.0.1/go.mod h1:Aw8dCMJ7RioblQeTqt88akK31OvO8Dhf5Jflh
 github.com/dsnet/golib v0.0.0-20171103203638-1ea166775780/go.mod h1:Lj+Z9rebOhdfkVLjJ8T6VcRQv3SXugXy999NBtR9aFY=
 github.com/dustin/go-humanize v1.0.0 h1:VSnTsYCnlFHaM2/igO1h6X3HA71jcobQuxemgkq4zYo=
 github.com/dustin/go-humanize v1.0.0/go.mod h1:HtrtbFcZ19U5GC7JDqmcUSB87Iq5E25KnS6fMYU6eOk=
+github.com/ellemouton/lightning-onion v1.2.1-0.20230126071019-d0b521d925bc h1:xoaOgdPBeiNDqbAQ12JzAA6WYettqXTvuOh4Urz+uOA=
+github.com/ellemouton/lightning-onion v1.2.1-0.20230126071019-d0b521d925bc/go.mod h1:IpXmxKG482HAQC/aCn0Sd+DYmKlkfaNF/iUz298HhC0=
 github.com/envoyproxy/go-control-plane v0.9.0/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymFceY/DCBVvsKhRF0iEA4=
 github.com/envoyproxy/go-control-plane v0.9.1-0.20191026205805-5f8ba28d4473/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymFceY/DCBVvsKhRF0iEA4=
 github.com/envoyproxy/go-control-plane v0.9.4/go.mod h1:6rpuAdCZL397s3pYoYcLgu1mIlRU8Am5FuJP05cCM98=
@@ -403,8 +405,6 @@ github.com/lightninglabs/neutrino v0.14.2 h1:yrnZUCYMZ5ECtXhgDrzqPq2oX8awoAN2D/c
 github.com/lightninglabs/neutrino v0.14.2/go.mod h1:OICUeTCn+4Tu27YRJIpWvvqySxx4oH4vgdP33Sw9RDc=
 github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display h1:RZJ8H4ueU/aQ9pFtx5wqsuD3B/DezrewJeVwDKKYY8E=
 github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display/go.mod h1:2oKOBU042GKFHrdbgGiKax4xVrFiZu51lhacUZQ9MnE=
-github.com/lightningnetwork/lightning-onion v1.2.1-0.20221202012345-ca23184850a1 h1:Wm0g70gkcAu2pGpNZwfWPSVOY21j8IyYsNewwK4OkT4=
-github.com/lightningnetwork/lightning-onion v1.2.1-0.20221202012345-ca23184850a1/go.mod h1:7dDx73ApjEZA0kcknI799m2O5kkpfg4/gr7N092ojNo=
 github.com/lightningnetwork/lnd/cert v1.1.1 h1:Nsav0RlIDRbOnzz2Yu69SQlK939IKya3Q2S0mDviIN8=
 github.com/lightningnetwork/lnd/cert v1.1.1/go.mod h1:1P46svkkd73oSoeI4zjkVKgZNwGq8bkGuPR8z+5vQUs=
 github.com/lightningnetwork/lnd/cert v1.2.0 h1:IWfjHNMI5JgQZU5fdvDptF3DkVI38f4jO/s3tYgWFbE=
@@ -554,6 +554,7 @@ github.com/tv42/zbase32 v0.0.0-20160707012821-501572607d02 h1:tcJ6OjwOMvExLlzrAV
 github.com/tv42/zbase32 v0.0.0-20160707012821-501572607d02/go.mod h1:tHlrkM198S068ZqfrO6S8HsoJq2bF3ETfTL+kt4tInY=
 github.com/ulikunitz/xz v0.5.8 h1:ERv8V6GKqVi23rgu5cj9pVfVzJbOqAY2Ntl88O6c2nQ=
 github.com/ulikunitz/xz v0.5.8/go.mod h1:nbz6k7qbPmH4IRqmfOplQw/tblSgqTqBwxkY0oWt/14=
+github.com/urfave/cli v1.22.5/go.mod h1:Gos4lmkARVdJ6EkW0WaNv/tZAAMe9V7XWyB60NtXRu0=
 github.com/urfave/cli v1.22.9 h1:cv3/KhXGBGjEXLC4bH0sLuJ9BewaAbpk5oyMOveu4pw=
 github.com/urfave/cli v1.22.9/go.mod h1:Gos4lmkARVdJ6EkW0WaNv/tZAAMe9V7XWyB60NtXRu0=
 github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8 h1:nIPpBwaJSVYIxUFsDv3M8ofmx9yWTog9BfvIu0q41lo=
