@@ -43,7 +43,7 @@ require (
 	github.com/ltcsuite/ltcd v0.0.0-20190101042124-f37f8bf35796
 	github.com/miekg/dns v1.1.43
 	github.com/prometheus/client_golang v1.11.1
-	github.com/stretchr/testify v1.8.1
+	github.com/stretchr/testify v1.8.2
 	github.com/tv42/zbase32 v0.0.0-20160707012821-501572607d02
 	github.com/urfave/cli v1.22.9
 	go.etcd.io/etcd/client/pkg/v3 v3.5.7
@@ -181,6 +181,10 @@ replace github.com/gogo/protobuf => github.com/gogo/protobuf v1.3.2
 // We want to format raw bytes as hex instead of base64. The forked version
 // allows us to specify that as an option.
 replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-display v1.30.0-hex-display
+
+// This replace points us to a version of lightning-onion that supports
+// route blinding (PR #57).
+replace github.com/lightningnetwork/lightning-onion => github.com/ellemouton/lightning-onion v1.2.1-0.20230510094401-f0508339b314
 
 // If you change this please also update .github/pull_request_template.md and
 // docs/INSTALL.md.
