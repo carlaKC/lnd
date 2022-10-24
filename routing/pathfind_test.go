@@ -949,11 +949,7 @@ func runFindLowestFeePath(t *testing.T, useCache bool) {
 	require.NoError(t, err, "unable to find path")
 	route, err := newRoute(
 		ctx.source, path, startingHeight,
-		finalHopParams{
-			amt:       paymentAmt,
-			cltvDelta: finalHopCLTV,
-			records:   nil,
-		},
+		newFinalHopParams(paymentAmt, 0, finalHopCLTV, nil, nil, nil),
 	)
 	require.NoError(t, err, "unable to create path")
 
@@ -1091,11 +1087,7 @@ func testBasicGraphPathFindingCase(t *testing.T, graphInstance *testGraphInstanc
 
 	route, err := newRoute(
 		sourceVertex, path, startingHeight,
-		finalHopParams{
-			amt:       paymentAmt,
-			cltvDelta: finalHopCLTV,
-			records:   nil,
-		},
+		newFinalHopParams(paymentAmt, 0, finalHopCLTV, nil, nil, nil),
 	)
 	require.NoError(t, err, "unable to create path")
 
@@ -1574,14 +1566,12 @@ func TestNewRoute(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			route, err := newRoute(
 				sourceVertex, testCase.hops, startingHeight,
-				finalHopParams{
-					amt:         testCase.paymentAmount,
-					totalAmt:    testCase.paymentAmount,
-					cltvDelta:   finalHopCLTV,
-					records:     nil,
-					paymentAddr: testCase.paymentAddr,
-					metadata:    testCase.metadata,
-				},
+				newFinalHopParams(
+					testCase.paymentAmount,
+					testCase.paymentAmount,
+					finalHopCLTV, nil, testCase.paymentAddr,
+					testCase.metadata,
+				),
 			)
 
 			if testCase.expectError {
@@ -2579,11 +2569,9 @@ func testCltvLimit(t *testing.T, useCache bool, limit uint32,
 	)
 	route, err := newRoute(
 		ctx.source, path, startingHeight,
-		finalHopParams{
-			amt:       paymentAmt,
-			cltvDelta: finalHopCLTV,
-			records:   nil,
-		},
+		newFinalHopParams(
+			paymentAmt, 0, finalHopCLTV, nil, nil, nil,
+		),
 	)
 	require.NoError(t, err, "unable to create path")
 
@@ -2900,11 +2888,9 @@ func runNoCycle(t *testing.T, useCache bool) {
 	require.NoError(t, err, "unable to find path")
 	route, err := newRoute(
 		ctx.source, path, startingHeight,
-		finalHopParams{
-			amt:       paymentAmt,
-			cltvDelta: finalHopCLTV,
-			records:   nil,
-		},
+		newFinalHopParams(
+			paymentAmt, 0, finalHopCLTV, nil, nil, nil,
+		),
 	)
 	require.NoError(t, err, "unable to create path")
 

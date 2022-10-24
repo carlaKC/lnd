@@ -1792,12 +1792,9 @@ func (r *ChannelRouter) FindRoute(source, target route.Vertex,
 	// Create the route with absolute time lock values.
 	route, err := newRoute(
 		source, path, uint32(currentHeight),
-		finalHopParams{
-			amt:       amt,
-			totalAmt:  amt,
-			cltvDelta: finalExpiry,
-			records:   destCustomRecords,
-		},
+		newFinalHopParams(
+			amt, amt, finalExpiry, destCustomRecords, nil, nil,
+		),
 	)
 	if err != nil {
 		return nil, err
@@ -2850,12 +2847,9 @@ func (r *ChannelRouter) BuildRoute(amt *lnwire.MilliSatoshi,
 	// Build and return the final route.
 	return newRoute(
 		source, pathEdges, uint32(height),
-		finalHopParams{
-			amt:         receiverAmt,
-			totalAmt:    receiverAmt,
-			cltvDelta:   uint16(finalCltvDelta),
-			records:     nil,
-			paymentAddr: payAddr,
-		},
+		newFinalHopParams(
+			receiverAmt, receiverAmt, uint16(finalCltvDelta),
+			nil, payAddr, nil,
+		),
 	)
 }

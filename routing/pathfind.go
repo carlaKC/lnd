@@ -95,6 +95,21 @@ type finalHopParams struct {
 	metadata []byte
 }
 
+// newFinalHopParams produces a set of parameters for the final hop in a route.
+func newFinalHopParams(amount, totalAmount lnwire.MilliSatoshi,
+	cltvDelta uint16, records record.CustomSet, payAddr *[32]byte,
+	metadata []byte) finalHopParams {
+
+	return finalHopParams{
+		amt:         amount,
+		totalAmt:    totalAmount,
+		cltvDelta:   cltvDelta,
+		records:     records,
+		paymentAddr: payAddr,
+		metadata:    metadata,
+	}
+}
+
 // newRoute constructs a route using the provided path and final hop constraints.
 // Any destination specific fields from the final hop params  will be attached
 // assuming the destination's feature vector signals support, otherwise this

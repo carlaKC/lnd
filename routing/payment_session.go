@@ -383,14 +383,14 @@ func (p *paymentSession) RequestRoute(maxAmt, feeLimit lnwire.MilliSatoshi,
 		// requirements.
 		route, err := newRoute(
 			sourceVertex, path, height,
-			finalHopParams{
-				amt:         maxAmt,
-				totalAmt:    p.payment.Amount,
-				cltvDelta:   finalCltvDelta,
-				records:     p.payment.DestCustomRecords,
-				paymentAddr: p.payment.PaymentAddr,
-				metadata:    p.payment.Metadata,
-			},
+			newFinalHopParams(
+				maxAmt,
+				p.payment.Amount,
+				finalCltvDelta,
+				p.payment.DestCustomRecords,
+				p.payment.PaymentAddr,
+				p.payment.Metadata,
+			),
 		)
 		if err != nil {
 			return nil, err
