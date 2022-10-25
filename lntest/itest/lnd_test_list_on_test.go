@@ -443,4 +443,8 @@ var allTestCases = []*testCase{
 		name: "open channel fee policy",
 		test: testOpenChannelUpdateFeePolicy,
 	},
+	{
+		name: "unknown next peer hint",
+		test: testUnknownNextPeer,
+	},
 }

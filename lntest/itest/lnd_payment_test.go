@@ -16,7 +16,100 @@ import (
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
+
+// testUnknownNextPeer tests the case where we are given an invoice containing
+// a bad hop hint from our own node. This test demonstrates a bug that will
+// enter an infinite loop until our payment timeout, so it is expected to run
+// for ~1 minute
+func testUnknownNextPeer(net *lntest.NetworkHarness, t *harnessTest) {
+	ctxb := context.Background()
+
+	// Create a bad hop hint from Bob -> Alice which has a made up channel
+	// ID and add an invoice to Alice's registry with the bad hint.
+	badHint := &lnrpc.HopHint{
+		NodeId:                    net.Bob.PubKeyStr,
+		ChanId:                    12334,
+		FeeBaseMsat:               1,
+		FeeProportionalMillionths: 10,
+		CltvExpiryDelta:           20,
+	}
+
+	preimage := [32]byte{1, 2, 3}
+	invoice := &lnrpc.Invoice{
+		Memo:      "test invoice",
+		ValueMsat: 1000,
+		RPreimage: preimage[:],
+		RouteHints: []*lnrpc.RouteHint{
+			{
+				HopHints: []*lnrpc.HopHint{
+					badHint,
+				},
+			},
+		},
+	}
+
+	ctxt, cancel := context.WithTimeout(ctxb, defaultTimeout)
+	inv, err := net.Alice.AddInvoice(ctxt, invoice)
+	cancel()
+	require.NoError(t.t, err)
+
+	// Open a channel from Bob -> Alice so that we're able to make the
+	// payment.
+	chanPoint := openChannelAndAssert(
+		t, net, net.Bob, net.Alice,
+		lntest.OpenChannelParams{
+			Amt: btcutil.Amount(100000),
+		},
+	)
+
+	// We want to demonstrate the case where our pathfinding gets stuck in
+	// an "infinite loop" until the payment timeout provided in our send
+	// payment request. To do this, we create a reasonably long context
+	// timeout (1 minute - a direct payment should easily complete in this
+	// time) and a longer payment timeout and assert that we reach the
+	// context deadline before the payment can complete.
+	//
+	// Note: this test is _intended_ to run for long to demonstrate the
+	// bug, and includes logging to make it easily human-grokkable.
+	ctxt, cancel = context.WithTimeout(ctxb, time.Minute)
+	defer cancel()
+	sendReq := &routerrpc.SendPaymentRequest{
+		PaymentRequest: inv.PaymentRequest,
+		TimeoutSeconds: 90,
+	}
+
+	sendClient, err := net.Bob.RouterClient.SendPaymentV2(ctxt, sendReq)
+	require.NoError(t.t, err, "send payment")
+
+	i := 0
+	for {
+		// We expect to get in flight updates from our payment until
+		// our context is canceled. When we error out we assert that
+		// we've experienced a context cancelation.
+		pmt, err := sendClient.Recv()
+		if err != nil {
+			status, ok := status.FromError(err)
+			require.True(t.t, ok, "expected coded error")
+			require.Equal(t.t, status.Code(), codes.DeadlineExceeded,
+				"expected timeout")
+
+			break
+
+		}
+
+		// We only expect in-flight updates.
+		require.Equal(t.t, lnrpc.Payment_IN_FLIGHT, pmt.Status)
+
+		// Log our update number to show that we're churning gears.
+		t.Logf("Payment update: %v", i)
+		i++
+	}
+
+	closeChannelAndAssert(t, net, net.Bob, chanPoint, false)
+}
 
 func testListPayments(net *lntest.NetworkHarness, t *harnessTest) {
 	ctxb := context.Background()
