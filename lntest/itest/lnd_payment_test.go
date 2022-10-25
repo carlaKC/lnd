@@ -16,14 +16,12 @@ import (
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // testUnknownNextPeer tests the case where we are given an invoice containing
-// a bad hop hint from our own node. This test demonstrates a bug that will
-// enter an infinite loop until our payment timeout, so it is expected to run
-// for ~1 minute
+// a bad hop hint from our own node. This test demonstrates that a previous bug
+// that would  enter an infinite loop until our payment timeout has been
+// resolved.
 func testUnknownNextPeer(net *lntest.NetworkHarness, t *harnessTest) {
 	ctxb := context.Background()
 
@@ -65,15 +63,13 @@ func testUnknownNextPeer(net *lntest.NetworkHarness, t *harnessTest) {
 		},
 	)
 
-	// We want to demonstrate the case where our pathfinding gets stuck in
-	// an "infinite loop" until the payment timeout provided in our send
-	// payment request. To do this, we create a reasonably long context
-	// timeout (1 minute - a direct payment should easily complete in this
-	// time) and a longer payment timeout and assert that we reach the
-	// context deadline before the payment can complete.
-	//
-	// Note: this test is _intended_ to run for long to demonstrate the
-	// bug, and includes logging to make it easily human-grokkable.
+	// Create a reasonably long timeout for the payment (1 minute - a
+	// direct payment should easily complete in this time) that is less than
+	// the payment's timeout. Previously we had a bug where bad hop hints
+	// would cause our payment to enter an infinite loop until the payment
+	// timeout, and this test's context timeout would be triggered.
+	// Asserting that we can complete the payment without hitting this
+	// timeout demonstrates that the bug is resolved.
 	ctxt, cancel = context.WithTimeout(ctxb, time.Minute)
 	defer cancel()
 	sendReq := &routerrpc.SendPaymentRequest{
@@ -84,28 +80,16 @@ func testUnknownNextPeer(net *lntest.NetworkHarness, t *harnessTest) {
 	sendClient, err := net.Bob.RouterClient.SendPaymentV2(ctxt, sendReq)
 	require.NoError(t.t, err, "send payment")
 
-	i := 0
 	for {
-		// We expect to get in flight updates from our payment until
-		// our context is canceled. When we error out we assert that
-		// we've experienced a context cancelation.
+		// Consume updates until our payment succeeds. We do not expect
+		// receiving from the send stream to fail because there is
+		// ample time for the payment to complete.
 		pmt, err := sendClient.Recv()
-		if err != nil {
-			status, ok := status.FromError(err)
-			require.True(t.t, ok, "expected coded error")
-			require.Equal(t.t, status.Code(), codes.DeadlineExceeded,
-				"expected timeout")
+		require.NoError(t.t, err)
 
+		if pmt.Status == lnrpc.Payment_SUCCEEDED {
 			break
-
 		}
-
-		// We only expect in-flight updates.
-		require.Equal(t.t, lnrpc.Payment_IN_FLIGHT, pmt.Status)
-
-		// Log our update number to show that we're churning gears.
-		t.Logf("Payment update: %v", i)
-		i++
 	}
 
 	closeChannelAndAssert(t, net, net.Bob, chanPoint, false)
