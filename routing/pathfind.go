@@ -90,6 +90,10 @@ type finalHopParams struct {
 	records     record.CustomSet
 	paymentAddr *[32]byte
 
+	// blindedPath optionally contains  additional blinded hops that need
+	// to be appended to the end of a route we have selected.
+	blindedPath *sphinx.BlindedPath
+
 	// metadata is additional data that is sent along with the payment to
 	// the payee.
 	metadata []byte
@@ -98,9 +102,9 @@ type finalHopParams struct {
 // newFinalHopParams produces a set of parameters for the final hop in a route.
 func newFinalHopParams(amount, totalAmount lnwire.MilliSatoshi,
 	cltvDelta uint16, records record.CustomSet, payAddr *[32]byte,
-	metadata []byte) finalHopParams {
+	metadata []byte, blindedPayment *BlindedPayment) finalHopParams {
 
-	return finalHopParams{
+	params := finalHopParams{
 		amt:         amount,
 		totalAmt:    totalAmount,
 		cltvDelta:   cltvDelta,
@@ -108,6 +112,14 @@ func newFinalHopParams(amount, totalAmount lnwire.MilliSatoshi,
 		paymentAddr: payAddr,
 		metadata:    metadata,
 	}
+
+	// If we're sending a blinded payment, include the blinded portion of
+	// our path that needs to be tacked on here.
+	if blindedPayment != nil {
+		params.blindedPath = blindedPayment.BlindedPath
+	}
+
+	return params
 }
 
 // mpp returns a mpp record for the final hop, if one is required.
@@ -131,6 +143,9 @@ func (f *finalHopParams) mpp() *record.MPP {
 // the source to the target node of the path finding attempt. It is assumed that
 // any feature vectors on all hops have been validated for transitive
 // dependencies.
+// NOTE: If constructing a route that is paying to a blinded path, the set of
+// pathEdges must be a path to the blinded path's introduction node, and must
+// be *inclusive* of the fees and cltv delta required by the blinded path.
 func newRoute(sourceVertex route.Vertex,
 	pathEdges []*channeldb.CachedEdgePolicy, currentHeight uint32,
 	finalHop finalHopParams) (*route.Route, error) {
@@ -208,27 +223,35 @@ func newRoute(sourceVertex route.Vertex,
 			totalTimeLock += uint32(finalHop.cltvDelta)
 			outgoingTimeLock = totalTimeLock
 
-			// Attach any custom records to the final hop if the
-			// receiver supports TLV.
-			if !tlvPayload && finalHop.records != nil {
-				return nil, errors.New("cannot attach " +
-					"custom records")
-			}
-			customRecords = finalHop.records
+			// Only include the last-hop fields if this is not a
+			// payment to a blinded path. If there is a blinded
+			// path, we're calculating this route to the
+			// introduction node, which is not actually the last
+			// hop in the route.
+			if finalHop.blindedPath == nil {
+				// Attach any custom records to the final hop
+				// if the receiver supports TLV.
+				if !tlvPayload && finalHop.records != nil {
+					return nil, errors.New("cannot " +
+						"attach custom records")
+				}
+				customRecords = finalHop.records
 
-			// If we're attaching a payment addr but the receiver
-			// doesn't support both TLV and payment addrs, fail.
-			payAddr := supports(lnwire.PaymentAddrOptional)
-			if !payAddr && finalHop.paymentAddr != nil {
-				return nil, errors.New("cannot attach " +
-					"payment addr")
-			}
+				// If we're attaching a payment addr but the
+				// receiver doesn't support both TLV and payment
+				// addrs, fail.
+				payAddr := supports(lnwire.PaymentAddrOptional)
+				if !payAddr && finalHop.paymentAddr != nil {
+					return nil, errors.New("cannot " +
+						"attach payment addr")
+				}
 
-			// Otherwise attach the mpp record if it exists.
-			// TODO(halseth): move this to payment life cycle,
-			// where AMP options are set.
-			mpp = finalHop.mpp()
-			metadata = finalHop.metadata
+				// Otherwise attach the mpp record if it exists.
+				// TODO(halseth): move this to payment life
+				// cycle, where AMP options are set.
+				mpp = finalHop.mpp()
+				metadata = finalHop.metadata
+			}
 		} else {
 			// The amount that the current hop needs to forward is
 			// equal to the incoming amount of the next hop.
@@ -268,6 +291,64 @@ func newRoute(sourceVertex route.Vertex,
 		// *next* hop, which is the amount this hop needs to forward,
 		// accounting for the fee that it takes.
 		nextIncomingAmount = amtToForward + fee
+	}
+
+	// If we are creating a route to a blinded path, we need to add our
+	// ephemeral key and blinded data for the introduction node (the last
+	// hop) and append our blinded hops to the path that we have created so
+	// far.
+	if finalHop.blindedPath != nil {
+		// First, we set our blinding point and encrypted payload for
+		// the introduction node's hop. This node will use the blinding
+		// point to decrypt its encrypted data and forward the payment
+		// on to the remaining blinded hops in the route.
+		introHop := hops[len(hops)-1]
+
+		// Sanity check that the final hop in the route produced above
+		// is in fact the introduction node.
+		introNode := route.NewVertex(
+			finalHop.blindedPath.IntroductionPoint,
+		)
+		if introHop.PubKeyBytes != introNode {
+			return nil, fmt.Errorf("path to blinded route should "+
+				"end with introduction node: %v, ends with: %v",
+				introNode, introHop.PubKeyBytes)
+		}
+
+		introHop.BlindingPoint = finalHop.blindedPath.BlindingPoint
+		introHop.EncryptedData = finalHop.blindedPath.BlindedHops[0].Payload
+
+		// Now we add all the blinded hops remaining in the path. We
+		// start from an index of 1 because the first blinded hop is
+		// the introduction node.
+		for i := 1; i < len(finalHop.blindedPath.BlindedHops); i++ {
+			blindedHop := finalHop.blindedPath.BlindedHops[i]
+
+			// Blinded hops don't need channel id, amount or cltv
+			// delta information because they do their own
+			// calculations based on the information provided in
+			// the encrypted data provided.
+			hop := &route.Hop{
+				PubKeyBytes: route.NewVertex(
+					blindedHop.NodePub,
+				),
+				// We know that all blinded hops at least
+				// support the new onion payload format.
+				LegacyPayload: false,
+				// Include the encrypted data for this hop.
+				EncryptedData: blindedHop.Payload,
+			}
+
+			// If we're on the last hop, also add the payloads
+			// that are for the final hop.
+			if i == len(finalHop.blindedPath.BlindedHops)-1 {
+				hop.Metadata = finalHop.metadata
+				hop.CustomRecords = finalHop.records
+				hop.MPP = finalHop.mpp()
+			}
+
+			hops = append(hops, hop)
+		}
 	}
 
 	// With the base routing data expressed as hops, build the full route

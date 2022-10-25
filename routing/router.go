@@ -1804,7 +1804,7 @@ func (r *ChannelRouter) FindRoute(source, target route.Vertex,
 	route, err := newRoute(
 		source, path, uint32(currentHeight),
 		newFinalHopParams(
-			amt, amt, finalExpiry, destCustomRecords, nil, nil,
+			amt, amt, finalExpiry, destCustomRecords, nil, nil, nil,
 		),
 	)
 	if err != nil {
@@ -2860,7 +2860,7 @@ func (r *ChannelRouter) BuildRoute(amt *lnwire.MilliSatoshi,
 		source, pathEdges, uint32(height),
 		newFinalHopParams(
 			receiverAmt, receiverAmt, uint16(finalCltvDelta),
-			nil, payAddr, nil,
+			nil, payAddr, nil, nil,
 		),
 	)
 }
