@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	sphinx "github.com/lightningnetwork/lightning-onion"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/record"
@@ -94,6 +95,13 @@ type Payload struct {
 	// were included in the payload.
 	customRecords record.CustomSet
 
+	// encryptedData is a blob of data encrypted by the receiver for use
+	// in blinded routes.
+	encryptedData []byte
+
+	// blindingPoint is an ephemeral pubkey for use in blinded routes.
+	blindingPoint *btcec.PublicKey
+
 	// metadata is additional data that is sent along with the payment to
 	// the payee.
 	metadata []byte
@@ -119,12 +127,14 @@ func NewLegacyPayload(f *sphinx.HopData) *Payload {
 // should correspond to the bytes encapsulated in a TLV onion payload.
 func NewPayloadFromReader(r io.Reader) (*Payload, error) {
 	var (
-		cid      uint64
-		amt      uint64
-		cltv     uint32
-		mpp      = &record.MPP{}
-		amp      = &record.AMP{}
-		metadata []byte
+		cid           uint64
+		amt           uint64
+		cltv          uint32
+		mpp           = &record.MPP{}
+		amp           = &record.AMP{}
+		encryptedData []byte
+		blindingPoint *btcec.PublicKey
+		metadata      []byte
 	)
 
 	tlvStream, err := tlv.NewStream(
@@ -132,6 +142,8 @@ func NewPayloadFromReader(r io.Reader) (*Payload, error) {
 		record.NewLockTimeRecord(&cltv),
 		record.NewNextHopIDRecord(&cid),
 		mpp.Record(),
+		record.NewEncryptedDataRecord(&encryptedData),
+		record.NewBlindingPointRecord(&blindingPoint),
 		amp.Record(),
 		record.NewMetadataRecord(&metadata),
 	)
@@ -176,6 +188,12 @@ func NewPayloadFromReader(r io.Reader) (*Payload, error) {
 		amp = nil
 	}
 
+	// If no encrypted data was parsed, set the field on our resulting
+	// payload to nil.
+	if _, ok := parsedTypes[record.EncryptedDataOnionType]; !ok {
+		encryptedData = nil
+	}
+
 	// If no metadata field was parsed, set the metadata field on the
 	// resulting payload to nil.
 	if _, ok := parsedTypes[record.MetadataOnionType]; !ok {
@@ -195,6 +213,8 @@ func NewPayloadFromReader(r io.Reader) (*Payload, error) {
 		MPP:           mpp,
 		AMP:           amp,
 		metadata:      metadata,
+		encryptedData: encryptedData,
+		blindingPoint: blindingPoint,
 		customRecords: customRecords,
 	}, nil
 }
@@ -297,6 +317,17 @@ func (h *Payload) AMPRecord() *record.AMP {
 // payload.
 func (h *Payload) CustomRecords() record.CustomSet {
 	return h.customRecords
+}
+
+// EncryptedData returns the route blinding encrypted data parsed from the
+// onion payload.
+func (h *Payload) EncryptedData() []byte {
+	return h.encryptedData
+}
+
+// BlindingPoint returns the route blinding point parsed from the onion payload.
+func (h *Payload) BlindingPoint() *btcec.PublicKey {
+	return h.blindingPoint
 }
 
 // Metadata returns the additional data that is sent along with the

@@ -188,6 +188,33 @@ func TestPayloadSize(t *testing.T) {
 			},
 			Metadata: []byte{10, 11},
 		},
+		{
+			PubKeyBytes:      testPubKeyBytes,
+			AmtToForward:     1200,
+			OutgoingTimeLock: 700000,
+			MPP:              record.NewMPP(500, [32]byte{}),
+			AMP:              record.NewAMP([32]byte{}, [32]byte{}, 8),
+			CustomRecords: map[uint64][]byte{
+				100000:  {1, 2, 3},
+				1000000: {4, 5},
+			},
+			Metadata:      []byte{10, 11},
+			EncryptedData: []byte{12, 13},
+		},
+		{
+			PubKeyBytes:      testPubKeyBytes,
+			AmtToForward:     1200,
+			OutgoingTimeLock: 700000,
+			MPP:              record.NewMPP(500, [32]byte{}),
+			AMP:              record.NewAMP([32]byte{}, [32]byte{}, 8),
+			CustomRecords: map[uint64][]byte{
+				100000:  {1, 2, 3},
+				1000000: {4, 5},
+			},
+			Metadata:      []byte{10, 11},
+			EncryptedData: []byte{12, 13},
+			BlindingPoint: testPubKey,
+		},
 	}
 
 	rt := Route{
