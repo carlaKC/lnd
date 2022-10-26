@@ -1,6 +1,7 @@
 package record
 
 import (
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightningnetwork/lnd/tlv"
 )
 
@@ -16,6 +17,14 @@ const (
 	// NextHopOnionType is the type used in the onion to reference the ID
 	// of the next hop.
 	NextHopOnionType tlv.Type = 6
+
+	// EncryptedDataOnionType is the type used to include encrypted data
+	// provided by the receiver in the onion for use in blinded paths.
+	EncryptedDataOnionType tlv.Type = 10
+
+	// BlindingPointOnionType is the type used to include receiver provided
+	// ephemeral keys in the onion that are used in blinded paths.
+	BlindingPointOnionType tlv.Type = 12
 
 	// MetadataOnionType is the type used in the onion for the payment
 	// metadata.
@@ -48,6 +57,18 @@ func NewLockTimeRecord(lockTime *uint32) tlv.Record {
 // (type 6) for an onion payload.
 func NewNextHopIDRecord(cid *uint64) tlv.Record {
 	return tlv.MakePrimitiveRecord(NextHopOnionType, cid)
+}
+
+// NewEncryptedDataRecord creates a tlv.Record that encodes the encrypted_data
+// (type 10) record for an onion payload.
+func NewEncryptedDataRecord(data *[]byte) tlv.Record {
+	return tlv.MakePrimitiveRecord(EncryptedDataOnionType, data)
+}
+
+// NewBlindingPointRecord creates a tlv.Record that encodes the blinding_point
+// (type 12) record for an onion payload.
+func NewBlindingPointRecord(point **btcec.PublicKey) tlv.Record {
+	return tlv.MakePrimitiveRecord(BlindingPointOnionType, point)
 }
 
 // NewMetadataRecord creates a tlv.Record that encodes the metadata (type 10)
