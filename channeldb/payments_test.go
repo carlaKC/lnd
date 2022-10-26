@@ -31,8 +31,10 @@ var (
 			65536: []byte{},
 			80001: []byte{},
 		},
-		MPP:      record.NewMPP(32, [32]byte{0x42}),
-		Metadata: []byte{1, 2, 3},
+		MPP:           record.NewMPP(32, [32]byte{0x42}),
+		Metadata:      []byte{1, 2, 3},
+		EncryptedData: []byte{3, 2, 1},
+		BlindingPoint: pub,
 	}
 
 	testHop2 = &route.Hop{

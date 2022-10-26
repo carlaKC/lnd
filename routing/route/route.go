@@ -131,6 +131,15 @@ type Hop struct {
 	// Metadata is additional data that is sent along with the payment to
 	// the payee.
 	Metadata []byte
+
+	// EncryptedData is an encrypted data blob includes for hops that are
+	// part of a blinded route.
+	EncryptedData []byte
+
+	// BlindingPoint is an ephemeral public key used by introduction nodes
+	// in blinded routes to unblind their portion of the route and pass on
+	// the next ephemeral key to the next blinded node to do the same.
+	BlindingPoint *btcec.PublicKey
 }
 
 // Copy returns a deep copy of the Hop.
@@ -145,6 +154,11 @@ func (h *Hop) Copy() *Hop {
 	if h.AMP != nil {
 		a := *h.AMP
 		c.AMP = &a
+	}
+
+	if h.BlindingPoint != nil {
+		b := *h.BlindingPoint
+		c.BlindingPoint = &b
 	}
 
 	return &c
@@ -195,6 +209,19 @@ func (h *Hop) PackHopPayload(w io.Writer, nextChanID uint64) error {
 		} else {
 			return ErrIntermediateMPPHop
 		}
+	}
+
+	// Add encrypted data and blinding point if present.
+	if h.EncryptedData != nil {
+		records = append(records, record.NewEncryptedDataRecord(
+			&h.EncryptedData,
+		))
+	}
+
+	if h.BlindingPoint != nil {
+		records = append(records, record.NewBlindingPointRecord(
+			&h.BlindingPoint,
+		))
 	}
 
 	// If an AMP record is destined for this hop, ensure that we only ever
@@ -268,6 +295,18 @@ func (h *Hop) PayloadSize(nextChanID uint64) uint64 {
 	// Add amp if present.
 	if h.AMP != nil {
 		addRecord(record.AMPOnionType, h.AMP.PayloadSize())
+	}
+
+	// Add encrypted data and blinding point if present.
+	if h.EncryptedData != nil {
+		addRecord(
+			record.EncryptedDataOnionType,
+			uint64(len(h.EncryptedData)),
+		)
+	}
+
+	if h.BlindingPoint != nil {
+		addRecord(record.BlindingPointOnionType, 33)
 	}
 
 	// Add metadata if present.
