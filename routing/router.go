@@ -1746,6 +1746,7 @@ func (r *ChannelRouter) FindRoute(source, target route.Vertex,
 	restrictions *RestrictParams,
 	destCustomRecords record.CustomSet,
 	routeHints map[route.Vertex][]*channeldb.CachedEdgePolicy,
+	blindedPath *BlindedPayment,
 	finalExpiry uint16) (*route.Route, error) {
 
 	// If we are making a payment to a blinded route, update our parameters

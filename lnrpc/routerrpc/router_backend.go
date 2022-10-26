@@ -57,6 +57,7 @@ type RouterBackend struct {
 		restrictions *routing.RestrictParams,
 		destCustomRecords record.CustomSet,
 		routeHints map[route.Vertex][]*channeldb.CachedEdgePolicy,
+		blindedPath *routing.BlindedPayment,
 		finalExpiry uint16) (*route.Route, error)
 
 	MissionControl MissionControl
@@ -326,7 +327,7 @@ func (r *RouterBackend) QueryRoutes(ctx context.Context,
 	// the route.
 	route, err := r.FindRoute(
 		sourcePubKey, targetPubKey, amt, in.TimePref, restrictions,
-		customRecords, routeHintEdges, finalCLTVDelta,
+		customRecords, routeHintEdges, nil, finalCLTVDelta,
 	)
 	if err != nil {
 		return nil, err

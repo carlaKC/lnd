@@ -270,7 +270,7 @@ func TestFindRoutesWithFeeLimit(t *testing.T) {
 
 	route, err := ctx.router.FindRoute(
 		ctx.router.selfNode.PubKeyBytes,
-		target, paymentAmt, 0, restrictions, nil, nil,
+		target, paymentAmt, 0, restrictions, nil, nil, nil,
 		MinCLTVDelta,
 	)
 	require.NoError(t, err, "unable to find any routes")
@@ -1486,7 +1486,7 @@ func TestAddEdgeUnknownVertexes(t *testing.T) {
 	_, err = ctx.router.FindRoute(
 		ctx.router.selfNode.PubKeyBytes,
 		targetPubKeyBytes, paymentAmt, 0, noRestrictions, nil, nil,
-		MinCLTVDelta,
+		nil, MinCLTVDelta,
 	)
 	require.NoError(t, err, "unable to find any routes")
 
@@ -1526,7 +1526,7 @@ func TestAddEdgeUnknownVertexes(t *testing.T) {
 	// updated.
 	_, err = ctx.router.FindRoute(
 		ctx.router.selfNode.PubKeyBytes,
-		targetPubKeyBytes, paymentAmt, 0, noRestrictions, nil, nil,
+		targetPubKeyBytes, paymentAmt, 0, noRestrictions, nil, nil, nil,
 		MinCLTVDelta,
 	)
 	require.NoError(t, err, "unable to find any routes")

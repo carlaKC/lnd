@@ -126,6 +126,7 @@ func testQueryRoutes(t *testing.T, useMissionControl bool, useMsat bool,
 		amt lnwire.MilliSatoshi, _ float64,
 		restrictions *routing.RestrictParams, _ record.CustomSet,
 		routeHints map[route.Vertex][]*channeldb.CachedEdgePolicy,
+		blindedPath *routing.BlindedPayment,
 		finalExpiry uint16) (*route.Route, error) {
 
 		if int64(amt) != amtSat*1000 {
