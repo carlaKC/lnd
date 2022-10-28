@@ -110,6 +110,17 @@ func newFinalHopParams(amount, totalAmount lnwire.MilliSatoshi,
 	}
 }
 
+// mpp returns a mpp record for the final hop, if one is required.
+func (f *finalHopParams) mpp() *record.MPP {
+	// If the final hop does not have a payment address, it is not a mpp
+	// payment.
+	if f.paymentAddr == nil {
+		return nil
+	}
+
+	return record.NewMPP(f.totalAmt, *f.paymentAddr)
+}
+
 // newRoute constructs a route using the provided path and final hop constraints.
 // Any destination specific fields from the final hop params  will be attached
 // assuming the destination's feature vector signals support, otherwise this
@@ -216,13 +227,7 @@ func newRoute(sourceVertex route.Vertex,
 			// Otherwise attach the mpp record if it exists.
 			// TODO(halseth): move this to payment life cycle,
 			// where AMP options are set.
-			if finalHop.paymentAddr != nil {
-				mpp = record.NewMPP(
-					finalHop.totalAmt,
-					*finalHop.paymentAddr,
-				)
-			}
-
+			mpp = finalHop.mpp()
 			metadata = finalHop.metadata
 		} else {
 			// The amount that the current hop needs to forward is
