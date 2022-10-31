@@ -1805,7 +1805,8 @@ func (r *ChannelRouter) FindRoute(source, target route.Vertex,
 	route, err := newRoute(
 		source, path, uint32(currentHeight),
 		newFinalHopParams(
-			amt, amt, finalExpiry, destCustomRecords, nil, nil, nil,
+			amt, amt, finalExpiry, destCustomRecords, nil, nil,
+			blindedPath,
 		),
 	)
 	if err != nil {
