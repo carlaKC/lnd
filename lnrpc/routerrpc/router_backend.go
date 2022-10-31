@@ -245,7 +245,7 @@ func (r *RouterBackend) QueryRoutes(ctx context.Context,
 	// that will leave the router in a zombie payment state.
 	err = routing.ValidateCLTVLimit(cltvLimit, finalCLTVDelta, false)
 	if err != nil {
-		return nil, err
+		//	return nil, err
 	}
 
 	cltvLimit -= uint32(finalCLTVDelta)
