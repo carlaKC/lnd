@@ -546,4 +546,8 @@ var allTestCases = []*lntest.TestCase{
 		Name:     "utxo selection funding",
 		TestFunc: testChannelUtxoSelection,
 	},
+	{
+		Name:     "query blinded route",
+		TestFunc: testQueryBlindedRoutes,
+	},
 }
