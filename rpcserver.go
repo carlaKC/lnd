@@ -4808,7 +4808,7 @@ func (r *rpcServer) extractPaymentIntent(rpcPayReq *rpcPaymentRequest) (rpcPayme
 
 	// Take the CLTV limit from the request if set, otherwise use the max.
 	cltvLimit, err := routerrpc.ValidateCLTVLimit(
-		rpcPayReq.CltvLimit, r.cfg.MaxOutgoingCltvExpiry,
+		rpcPayReq.CltvLimit, r.cfg.MaxOutgoingCltvExpiry, false,
 	)
 	if err != nil {
 		return payIntent, err

@@ -13,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
+	sphinx "github.com/lightningnetwork/lightning-onion"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/feature"
 	"github.com/lightningnetwork/lnd/htlcswitch"
@@ -144,18 +145,11 @@ type MissionControl interface {
 func (r *RouterBackend) QueryRoutes(ctx context.Context,
 	in *lnrpc.QueryRoutesRequest) (*lnrpc.QueryRoutesResponse, error) {
 
-	parsePubKey := func(key string) (route.Vertex, error) {
-		pubKeyBytes, err := hex.DecodeString(key)
-		if err != nil {
-			return route.Vertex{}, err
-		}
-
-		return route.NewVertexFromBytes(pubKeyBytes)
-	}
+	haveBlindedPath := in.BlindedPath != nil
 
 	// Parse the hex-encoded source and target public keys into full public
 	// key objects we can properly manipulate.
-	targetPubKey, err := parsePubKey(in.PubKey)
+	targetPubKey, err := targetPubKey(in.PubKey, haveBlindedPath)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +222,10 @@ func (r *RouterBackend) QueryRoutes(ctx context.Context,
 	if sourcePubKey != r.SelfNode {
 		maxTotalTimelock = math.MaxUint32
 	}
-	cltvLimit, err := ValidateCLTVLimit(in.CltvLimit, maxTotalTimelock)
+
+	cltvLimit, err := ValidateCLTVLimit(
+		in.CltvLimit, maxTotalTimelock, haveBlindedPath,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -236,9 +233,13 @@ func (r *RouterBackend) QueryRoutes(ctx context.Context,
 	// We need to subtract the final delta before passing it into path
 	// finding. The optimal path is independent of the final cltv delta and
 	// the path finding algorithm is unaware of this value.
-	finalCLTVDelta := FinalCLTVDelta(
+	finalCLTVDelta, err := FinalCLTVDelta(
 		uint16(in.FinalCltvDelta), r.DefaultFinalCltvDelta,
+		haveBlindedPath,
 	)
+	if err != nil {
+		return nil, err
+	}
 
 	// Do bounds checking without block padding so we don't give routes
 	// that will leave the router in a zombie payment state.
@@ -321,12 +322,18 @@ func (r *RouterBackend) QueryRoutes(ctx context.Context,
 		return nil, err
 	}
 
+	// Validate and convert blinded payment details, if provided.
+	blindedPmt, err := unmarshalBlindedPayment(in.BlindedPath)
+	if err != nil {
+		return nil, err
+	}
+
 	// Query the channel router for a possible path to the destination that
 	// can carry `in.Amt` satoshis _including_ the total fee required on
 	// the route.
 	route, err := r.FindRoute(
 		sourcePubKey, targetPubKey, amt, in.TimePref, restrictions,
-		customRecords, routeHintEdges, nil, finalCLTVDelta,
+		customRecords, routeHintEdges, blindedPmt, finalCLTVDelta,
 	)
 	if err != nil {
 		return nil, err
@@ -350,6 +357,35 @@ func (r *RouterBackend) QueryRoutes(ctx context.Context,
 	}
 
 	return routeResp, nil
+}
+
+// parsePubKey gets a vertex from a pubkey string.
+func parsePubKey(pubkey string) (route.Vertex, error) {
+	pubKeyBytes, err := hex.DecodeString(pubkey)
+	if err != nil {
+		return route.Vertex{}, err
+	}
+
+	return route.NewVertexFromBytes(pubKeyBytes)
+
+}
+
+// targetPubKey parses the target pubkey provided in a request. It will error
+// if a pubkey was provided in conjunction with a blinded path because pubkeys
+// should be obtained directly from the blinded path.
+func targetPubKey(pubkey string, blindedPayment bool) (
+	route.Vertex, error) {
+
+	if blindedPayment {
+		if pubkey != "" {
+			return route.Vertex{}, errors.New("target should " +
+				"not be set if a blinded path is supplied")
+		}
+
+		return route.Vertex{}, nil
+	}
+
+	return parsePubKey(pubkey)
 }
 
 // getSuccessProbability returns the success probability for the given route
@@ -595,7 +631,7 @@ func (r *RouterBackend) extractIntentFromSendRequest(
 
 	// Take the CLTV limit from the request if set, otherwise use the max.
 	cltvLimit, err := ValidateCLTVLimit(
-		uint32(rpcPayReq.CltvLimit), r.MaxTotalTimelock,
+		uint32(rpcPayReq.CltvLimit), r.MaxTotalTimelock, false,
 	)
 	if err != nil {
 		return nil, err
@@ -781,10 +817,13 @@ func (r *RouterBackend) extractIntentFromSendRequest(
 		payIntent.Target = target
 
 		// Final payment CLTV delta.
-		payIntent.FinalCLTVDelta = FinalCLTVDelta(
+		payIntent.FinalCLTVDelta, err = FinalCLTVDelta(
 			uint16(rpcPayReq.FinalCltvDelta),
-			r.DefaultFinalCltvDelta,
+			r.DefaultFinalCltvDelta, false,
 		)
+		if err != nil {
+			return nil, err
+		}
 
 		// Amount.
 		if reqAmt == 0 {
@@ -948,6 +987,93 @@ func unmarshallHopHint(rpcHint *lnrpc.HopHint) (zpay32.HopHint, error) {
 	}, nil
 }
 
+func unmarshalBlindedPayment(rpcPayment *lnrpc.BlindedPayment) (
+	*routing.BlindedPayment, error) {
+
+	if rpcPayment == nil {
+		return nil, nil
+	}
+
+	path, err := unmarshalBlindedPath(rpcPayment.Route)
+	if err != nil {
+		return nil, err
+	}
+
+	return &routing.BlindedPayment{
+		BlindedPath: path,
+		AggregateRelay: &lnwire.PaymentRelay{
+			CltvExpiryDelta: uint16(rpcPayment.TotalCltvDelta),
+			BaseFee: uint32(
+				rpcPayment.AggregateBaseFeeMsat,
+			),
+			FeeRate: uint32(
+				rpcPayment.AggregateProportionalFeePpm,
+			),
+		},
+		AggregateConstraints: &lnwire.PaymentConstraints{
+			MaxCltvExpiry: uint32(rpcPayment.CltvLimit),
+		},
+	}, nil
+}
+
+func unmarshalBlindedPath(rpcPath *lnrpc.BlindedRoute) (*sphinx.BlindedPath,
+	error) {
+
+	if rpcPath == nil {
+		return nil, errors.New("blinded path required when blinded " +
+			"route is provided")
+	}
+
+	introduction, err := btcec.ParsePubKey(rpcPath.IntroductionNode)
+	if err != nil {
+		return nil, err
+	}
+
+	blinding, err := btcec.ParsePubKey(rpcPath.BlindingPoint)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(rpcPath.BlindedHops) < 2 {
+		return nil, errors.New("at least 2 blinded hops required")
+	}
+
+	path := &sphinx.BlindedPath{
+		IntroductionPoint: introduction,
+		BlindingPoint:     blinding,
+		BlindedHops: make(
+			[]*sphinx.BlindedHopInfo, len(rpcPath.BlindedHops),
+		),
+	}
+
+	for i, hop := range rpcPath.BlindedHops {
+		path.BlindedHops[i], err = unmarshalBlindedHop(hop)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return path, nil
+}
+
+func unmarshalBlindedHop(rpcHop *lnrpc.BlindedHop) (*sphinx.BlindedHopInfo,
+	error) {
+
+	pubkey, err := btcec.ParsePubKey(rpcHop.BlindedNode)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(rpcHop.EncryptedData) == 0 {
+		return nil, errors.New("empty encrypted data not allowed")
+	}
+
+	return &sphinx.BlindedHopInfo{
+		NodePub: pubkey,
+		Payload: rpcHop.EncryptedData,
+	}, nil
+}
+
 // UnmarshalFeatures converts a list of uint32's into a valid feature vector.
 // This method checks that feature bit pairs aren't assigned toegether, and
 // validates transitive dependencies.
@@ -985,8 +1111,22 @@ func ValidatePayReqExpiry(payReq *zpay32.Invoice) error {
 
 // ValidateCLTVLimit returns a valid CLTV limit given a value and a maximum. If
 // the value exceeds the maximum, then an error is returned. If the value is 0,
-// then the maximum is used.
-func ValidateCLTVLimit(val, max uint32) (uint32, error) {
+// then the maximum is used. An error will be returned if a non-zero value was
+// set when using a blinded path, because the value should be supplied from
+// within the path.
+func ValidateCLTVLimit(val, max uint32, blindedPath bool) (uint32, error) {
+	if blindedPath {
+		if val != 0 {
+			return 0, errors.New("total lock time should not be " +
+				"set if a blinded path is supplied")
+
+		}
+
+		// Return a zero value if a blinded path is set, because the
+		// limit will be directly sourced from the path.
+		return 0, nil
+	}
+
 	switch {
 	case val == 0:
 		return max, nil
@@ -999,13 +1139,29 @@ func ValidateCLTVLimit(val, max uint32) (uint32, error) {
 }
 
 // FinalCLTVDelta returns a final delta for a route, returning a default if no
-// user-provided value was given.
-func FinalCLTVDelta(val, defaultDelta uint16) uint16 {
-	if val != 0 {
-		return val
+// user-provided value was given. An error will be returned if a non-zero value
+// was set when using a blinded path, because the value should be supplied from
+// within the path.
+func FinalCLTVDelta(val, defaultDelta uint16, blindedPath bool) (uint16,
+	error) {
+
+	if blindedPath {
+		if val != 0 {
+			return 0, errors.New("final hop timelock delta " +
+				"should not be set if a blinded path is " +
+				"supplied")
+		}
+
+		// Return a zero value if a blinded path is set, because the
+		// limit will be directly sourced from the path.
+		return 0, nil
 	}
 
-	return defaultDelta
+	if val != 0 {
+		return val, nil
+	}
+
+	return defaultDelta, nil
 }
 
 // UnmarshalMPP accepts the mpp_total_amt_msat and mpp_payment_addr fields from
