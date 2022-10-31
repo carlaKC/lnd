@@ -1748,6 +1748,17 @@ func (r *ChannelRouter) FindRoute(source, target route.Vertex,
 	routeHints map[route.Vertex][]*channeldb.CachedEdgePolicy,
 	finalExpiry uint16) (*route.Route, error) {
 
+	// If we are making a payment to a blinded route, update our parameters
+	// to reflect the additional hops in the path (no-op if there is no
+	// blinded payment).
+	var err error
+	target, amt, restrictions.CltvLimit, finalExpiry, err = blindedPaymentParams(
+		target, amt, restrictions.CltvLimit, finalExpiry, blindedPath,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	log.Debugf("Searching for path to %v, sending %v", target, amt)
 
 	// We'll attempt to obtain a set of bandwidth hints that can help us

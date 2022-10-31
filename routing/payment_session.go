@@ -233,15 +233,25 @@ func (p *paymentSession) RequestRoute(maxAmt, feeLimit lnwire.MilliSatoshi,
 		return nil, errEmptyPaySession
 	}
 
+	// If we are making a payment to a blinded route, update our parameters
+	// to reflect the additional hops in the path (no-op if there is no
+	// blinded payment).
+	target, maxAmt, cltvLimit, finalCltvDelta, err := blindedPaymentParams(
+		p.payment.Target, maxAmt, p.payment.CltvLimit,
+		p.payment.FinalCLTVDelta, nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	// Add BlockPadding to the finalCltvDelta so that the receiving node
 	// does not reject the HTLC if some blocks are mined while it's in-flight.
-	finalCltvDelta := p.payment.FinalCLTVDelta
 	finalCltvDelta += BlockPadding
 
 	// We need to subtract the final delta before passing it into path
 	// finding. The optimal path is independent of the final cltv delta and
 	// the path finding algorithm is unaware of this value.
-	cltvLimit := p.payment.CltvLimit - uint32(finalCltvDelta)
+	cltvLimit -= uint32(finalCltvDelta)
 
 	// TODO(roasbeef): sync logic amongst dist sys
 
@@ -304,7 +314,7 @@ func (p *paymentSession) RequestRoute(maxAmt, feeLimit lnwire.MilliSatoshi,
 				graph:           routingGraph,
 			},
 			restrictions, &p.pathFindingConfig,
-			sourceVertex, p.payment.Target,
+			sourceVertex, target,
 			maxAmt, p.payment.TimePref, finalHtlcExpiry,
 		)
 
