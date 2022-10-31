@@ -236,10 +236,9 @@ func (r *RouterBackend) QueryRoutes(ctx context.Context,
 	// We need to subtract the final delta before passing it into path
 	// finding. The optimal path is independent of the final cltv delta and
 	// the path finding algorithm is unaware of this value.
-	finalCLTVDelta := r.DefaultFinalCltvDelta
-	if in.FinalCltvDelta != 0 {
-		finalCLTVDelta = uint16(in.FinalCltvDelta)
-	}
+	finalCLTVDelta := FinalCLTVDelta(
+		uint16(in.FinalCltvDelta), r.DefaultFinalCltvDelta,
+	)
 
 	// Do bounds checking without block padding so we don't give routes
 	// that will leave the router in a zombie payment state.
@@ -782,12 +781,10 @@ func (r *RouterBackend) extractIntentFromSendRequest(
 		payIntent.Target = target
 
 		// Final payment CLTV delta.
-		if rpcPayReq.FinalCltvDelta != 0 {
-			payIntent.FinalCLTVDelta =
-				uint16(rpcPayReq.FinalCltvDelta)
-		} else {
-			payIntent.FinalCLTVDelta = r.DefaultFinalCltvDelta
-		}
+		payIntent.FinalCLTVDelta = FinalCLTVDelta(
+			uint16(rpcPayReq.FinalCltvDelta),
+			r.DefaultFinalCltvDelta,
+		)
 
 		// Amount.
 		if reqAmt == 0 {
@@ -999,6 +996,16 @@ func ValidateCLTVLimit(val, max uint32) (uint32, error) {
 	default:
 		return val, nil
 	}
+}
+
+// FinalCLTVDelta returns a final delta for a route, returning a default if no
+// user-provided value was given.
+func FinalCLTVDelta(val, defaultDelta uint16) uint16 {
+	if val != 0 {
+		return val
+	}
+
+	return defaultDelta
 }
 
 // UnmarshalMPP accepts the mpp_total_amt_msat and mpp_payment_addr fields from
