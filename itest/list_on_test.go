@@ -538,4 +538,8 @@ var allTestCases = []*lntest.TestCase{
 		Name:     "custom features",
 		TestFunc: testCustomFeatures,
 	},
+	{
+		Name:     "query blinded route",
+		TestFunc: testQueryBlindedRoutes,
+	},
 }
