@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightningnetwork/lnd/chainreg"
@@ -17,6 +18,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 )
@@ -1972,4 +1974,254 @@ func testRouteFeeCutoff(net *lntest.NetworkHarness, t *harnessTest) {
 	closeChannelAndAssert(t, net, net.Alice, chanPointAliceCarol, false)
 	closeChannelAndAssert(t, net, net.Bob, chanPointBobDave, false)
 	closeChannelAndAssert(t, net, carol, chanPointCarolDave, false)
+}
+
+// testQueryBlindedRoutes tests querying routes to blinded routes.
+func testQueryBlindedRoutes(net *lntest.NetworkHarness, t *harnessTest) {
+	ctxb := context.Background()
+
+	// Setup a two hop channel network: Alice -- Bob -- Carol.
+	// We set our proportional fee for these channels to zero, so that
+	// our calculations are easier. This is okay, because we're not testing
+	// the basic mechanics of pathfinding in this test.
+	chanAmt := btcutil.Amount(100000)
+	chanPointAliceBob := openChannelAndAssert(
+		t, net, net.Alice, net.Bob,
+		lntest.OpenChannelParams{
+			Amt:        chanAmt,
+			BaseFee:    10000,
+			FeeRate:    0,
+			UseBaseFee: true,
+			UseFeeRate: true,
+		},
+	)
+
+	carol := net.NewNode(t.t, "Carol", nil)
+	defer shutdownAndAssert(net, t, carol)
+
+	net.ConnectNodes(t.t, net.Bob, carol)
+	var bobCarolBase uint64 = 2000
+	chanPointBobCarol := openChannelAndAssert(
+		t, net, net.Bob, carol,
+		lntest.OpenChannelParams{
+			Amt:        chanAmt,
+			BaseFee:    bobCarolBase,
+			FeeRate:    0,
+			UseBaseFee: true,
+			UseFeeRate: true,
+		},
+	)
+
+	// Wait for Alice to see Bob/Carol's channel because she'll need it for
+	// pathfinding.
+	err := net.Alice.WaitForNetworkChannelOpen(chanPointBobCarol)
+	require.NoError(t.t, err)
+
+	// Lookup full channel info so that we have channel ids for our route.
+	aliceBobChan, err := getChanInfo(net.Alice)
+	require.NoError(t.t, err)
+
+	bobCarolChan, err := getChanInfo(carol)
+	require.NoError(t.t, err)
+
+	// Sanity check that bob's fee is as expected.
+	bobCarolInfo, err := net.Bob.GetChanInfo(ctxb, &lnrpc.ChanInfoRequest{
+		ChanId: bobCarolChan.ChanId,
+	})
+	require.NoError(t.t, err)
+
+	// Our test relies on knowing the fee rate for bob - carol to set the
+	// fees we expect for our route. Perform a quick sanity check that our
+	// policy is as expected.
+	var policy *lnrpc.RoutingPolicy
+	if bobCarolInfo.Node1Pub == net.Bob.PubKeyStr {
+		policy = bobCarolInfo.Node1Policy
+	} else {
+		policy = bobCarolInfo.Node2Policy
+	}
+	require.Equal(t.t, bobCarolBase, uint64(policy.FeeBaseMsat), "base fee")
+	require.Equal(t.t, int64(0), policy.FeeRateMilliMsat, "fee rate")
+
+	// We'll also need the current block height to calculate our locktimes.
+	ctxt, cancel := context.WithTimeout(ctxb, defaultTimeout)
+	defer cancel()
+
+	info, err := net.Alice.GetInfo(ctxt, &lnrpc.GetInfoRequest{})
+	require.NoError(t.t, err)
+	cancel()
+
+	// Since we created channels with default parameters, we can assume
+	// that all of our channels have the default cltv delta.
+	bobCarolDelta := uint32(chainreg.DefaultBitcoinTimeLockDelta)
+
+	// Create arbitrary pubkeys for use in our blinded route. They're not
+	// actually used functionally in this test, so we can just make them up.
+	var (
+		_, blindingPoint = btcec.PrivKeyFromBytes([]byte{1})
+		_, carolBlinded  = btcec.PrivKeyFromBytes([]byte{2})
+		_, blindedHop1   = btcec.PrivKeyFromBytes([]byte{3})
+		_, blindedHop2   = btcec.PrivKeyFromBytes([]byte{4})
+
+		encryptedDataCarol = []byte{1, 2, 3}
+		encryptedData1     = []byte{4, 5, 6}
+		encryptedData2     = []byte{7, 8, 9}
+
+		blindingBytes     = blindingPoint.SerializeCompressed()
+		carolBlindedBytes = carolBlinded.SerializeCompressed()
+		blinded1Bytes     = blindedHop1.SerializeCompressed()
+		blinded2Bytes     = blindedHop2.SerializeCompressed()
+	)
+
+	// Now we create a blinded route which uses carol as an introduction
+	// node:
+	// Carol --- B1 --- B2
+	route := &lnrpc.BlindedRoute{
+		IntroductionNode: carol.PubKey[:],
+		BlindingPoint:    blindingBytes,
+		BlindedHops: []*lnrpc.BlindedHop{
+			{
+				// The first hop in the blinded route is
+				// expected to be the introduction node.
+				BlindedNode:   carolBlindedBytes,
+				EncryptedData: encryptedDataCarol,
+			},
+			{
+				BlindedNode:   blinded1Bytes,
+				EncryptedData: encryptedData1,
+			},
+			{
+				BlindedNode:   blinded2Bytes,
+				EncryptedData: encryptedData2,
+			},
+		},
+	}
+
+	// Create a blinded payment that has aggregate cltv and fee params
+	// for our route.
+	var (
+		aggregateBaseFee   uint64 = 1500
+		aggregateCltvDelta uint32 = 125
+		cltvLimit                 = info.BlockHeight + 500
+	)
+
+	blindedPayment := &lnrpc.BlindedPayment{
+		Route:                route,
+		AggregateBaseFeeMsat: aggregateBaseFee,
+		TotalCltvDelta:       aggregateCltvDelta,
+		CltvLimit:            cltvLimit,
+	}
+
+	// Query for a route to the blinded path constructed above.
+	ctxt, cancel = context.WithTimeout(ctxb, defaultTimeout)
+	defer cancel()
+
+	var (
+		paymentAmt int64  = 100_000
+		finalDelta uint32 = 50
+	)
+	req := &lnrpc.QueryRoutesRequest{
+		AmtMsat:        paymentAmt,
+		BlindedPath:    blindedPayment,
+		FinalCltvDelta: int32(finalDelta),
+	}
+
+	resp, err := net.Alice.QueryRoutes(ctxt, req)
+	require.NoError(t.t, err)
+	require.Len(t.t, resp.Routes, 1)
+
+	// Payment amount and cltv will be included for the bob/carol edge
+	// (because we apply on the outgoing hop), and the blinded portion of
+	// the route.
+	totalFee := bobCarolBase + aggregateBaseFee
+	totalAmt := uint64(paymentAmt) + totalFee
+	totalCltv := info.BlockHeight + bobCarolDelta + aggregateCltvDelta +
+		finalDelta
+
+	// Alice -> Bob
+	//   Forward: total - bob carol fees
+	//   Expiry: total - bob carol delta
+	//
+	// Bob -> Carol
+	//  Forward: 101500 (total + blinded fees)
+	//  Expiry: Height + 125 (final delta)
+	//  Encrypted Data: enc_carol
+	//
+	// Carol -> Blinded 1
+	//  Forward/ Expiry: 0
+	//  Encrypted Data: enc_1
+	//
+	// Blinded 1 -> Blinded 2
+	//  Forward/ Expiry: 0
+	//  Encrypted Data: enc_2
+	hop0Amount := int64(totalAmt - bobCarolBase)
+	hop0Expiry := totalCltv - bobCarolDelta
+	blindedExpiry := hop0Expiry - aggregateCltvDelta
+
+	expectedRoute := &lnrpc.Route{
+		TotalTimeLock: totalCltv,
+		TotalAmtMsat:  int64(totalAmt),
+		TotalFeesMsat: int64(totalFee),
+		Hops: []*lnrpc.Hop{
+			{
+				ChanId:           aliceBobChan.ChanId,
+				Expiry:           hop0Expiry,
+				AmtToForwardMsat: hop0Amount,
+				FeeMsat:          int64(bobCarolBase),
+				PubKey:           net.Bob.PubKeyStr,
+			},
+			{
+				ChanId:        bobCarolChan.ChanId,
+				PubKey:        carol.PubKeyStr,
+				BlindingPoint: blindingBytes,
+				FeeMsat:       int64(aggregateBaseFee),
+				EncryptedData: encryptedDataCarol,
+			},
+			{
+				PubKey: hex.EncodeToString(
+					blinded1Bytes,
+				),
+				EncryptedData: encryptedData1,
+			},
+			{
+				PubKey: hex.EncodeToString(
+					blinded2Bytes,
+				),
+				AmtToForwardMsat: paymentAmt,
+				Expiry:           blindedExpiry,
+				EncryptedData:    encryptedData2,
+			},
+		},
+	}
+
+	r := resp.Routes[0]
+	assert.Equal(t.t, expectedRoute.TotalTimeLock, r.TotalTimeLock)
+	assert.Equal(t.t, expectedRoute.TotalAmtMsat, r.TotalAmtMsat)
+	assert.Equal(t.t, expectedRoute.TotalFeesMsat, r.TotalFeesMsat)
+
+	assert.Equal(t.t, len(expectedRoute.Hops), len(r.Hops))
+	for i, hop := range expectedRoute.Hops {
+		assert.Equal(t.t, hop.PubKey, r.Hops[i].PubKey,
+			"hop: %v pubkey", i)
+
+		assert.Equal(t.t, hop.ChanId, r.Hops[i].ChanId,
+			"hop: %v chan id", i)
+
+		assert.Equal(t.t, hop.Expiry, r.Hops[i].Expiry,
+			"hop: %v expiry", i)
+
+		assert.Equal(t.t, hop.AmtToForwardMsat,
+			r.Hops[i].AmtToForwardMsat, "hop: %v forward", i)
+
+		assert.Equal(t.t, hop.FeeMsat, r.Hops[i].FeeMsat,
+			"hop: %v fee", i)
+
+		assert.Equal(t.t, hop.BlindingPoint, r.Hops[i].BlindingPoint,
+			"hop: %v blinding point", i)
+
+		assert.Equal(t.t, hop.EncryptedData, r.Hops[i].EncryptedData,
+			"hop: %v encrypted data", i)
+	}
+
+	closeChannelAndAssert(t, net, net.Alice, chanPointAliceBob, false)
+	closeChannelAndAssert(t, net, net.Bob, chanPointBobCarol, false)
 }
