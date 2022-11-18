@@ -175,9 +175,10 @@ func (p *OnionProcessor) ReconstructHopIterator(r io.Reader, rHash []byte) (
 // packet, perform sphinx replay detection, and schedule the entry for garbage
 // collection.
 type DecodeHopIteratorRequest struct {
-	OnionReader  io.Reader
-	RHash        []byte
-	IncomingCltv uint32
+	OnionReader   io.Reader
+	RHash         []byte
+	IncomingCltv  uint32
+	BlindingPoint *btcec.PublicKey
 }
 
 // DecodeHopIteratorResponse encapsulates the outcome of a batched sphinx onion
@@ -234,7 +235,8 @@ func (p *OnionProcessor) DecodeHopIterators(id []byte,
 		}
 
 		err = tx.ProcessOnionPacket(
-			seqNum, onionPkt, req.RHash, req.IncomingCltv, nil,
+			seqNum, onionPkt, req.RHash, req.IncomingCltv,
+			req.BlindingPoint,
 		)
 		switch err {
 		case nil:
