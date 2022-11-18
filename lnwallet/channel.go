@@ -381,6 +381,12 @@ type PaymentDescriptor struct {
 	// isForwarded denotes if an incoming HTLC has been forwarded to any
 	// possible upstream peers in the route.
 	isForwarded bool
+
+	// BlindingPoint is an optional ephemeral key used in route blinding.
+	// This value is set for nodes that are relaying payments inside of a
+	// blinded route (ie, not the introduction node) from update_add_htlc's
+	// TLVs.
+	BlindingPoint *btcec.PublicKey
 }
 
 // PayDescsFromRemoteLogUpdates converts a slice of LogUpdates received from the
@@ -421,6 +427,7 @@ func PayDescsFromRemoteLogUpdates(chanID lnwire.ShortChannelID, height uint64,
 					Height: height,
 					Index:  uint16(i),
 				},
+				BlindingPoint: wireMsg.BlindingPoint.PublicKey,
 			}
 			pd.OnionBlob = make([]byte, len(wireMsg.OnionBlob))
 			copy(pd.OnionBlob[:], wireMsg.OnionBlob[:])
@@ -788,6 +795,9 @@ func (c *commitment) toDiskCommit(ourCommit bool) *channeldb.ChannelCommitment {
 // commitment struct and updateLog. This function is used when we need to
 // restore commitment state written do disk back into memory once we need to
 // restart a channel session.
+//
+// Note that HTLCs are restored _without_ any additional data that was provided
+// in UpdateAddHtlc's TLVs.
 func (lc *LightningChannel) diskHtlcToPayDesc(feeRate chainfee.SatPerKWeight,
 	commitHeight uint64, htlc *channeldb.HTLC, localCommitKeys,
 	remoteCommitKeys *CommitmentKeyRing, isLocal bool) (PaymentDescriptor,
@@ -866,6 +876,11 @@ func (lc *LightningChannel) diskHtlcToPayDesc(feeRate chainfee.SatPerKWeight,
 		ourWitnessScript:   ourWitnessScript,
 		theirPkScript:      theirP2WSH,
 		theirWitnessScript: theirWitnessScript,
+		// Note: Blinding point is not restored for htlcs that are
+		// persisted. This is okay, because these any forwarding
+		// information that needs to be extracted using the blinding
+		// point has already been stored by the switch by the time we
+		// get to this point.
 	}
 
 	return pd, nil
@@ -1452,6 +1467,7 @@ func (lc *LightningChannel) logUpdateToPayDesc(logUpdate *channeldb.LogUpdate,
 			HtlcIndex:             wireMsg.ID,
 			LogIndex:              logUpdate.LogIndex,
 			addCommitHeightRemote: commitHeight,
+			BlindingPoint:         wireMsg.BlindingPoint.PublicKey,
 		}
 		pd.OnionBlob = make([]byte, len(wireMsg.OnionBlob))
 		copy(pd.OnionBlob[:], wireMsg.OnionBlob[:])
@@ -1649,6 +1665,7 @@ func (lc *LightningChannel) remoteLogUpdateToPayDesc(logUpdate *channeldb.LogUpd
 			HtlcIndex:            wireMsg.ID,
 			LogIndex:             logUpdate.LogIndex,
 			addCommitHeightLocal: commitHeight,
+			BlindingPoint:        wireMsg.BlindingPoint.PublicKey,
 		}
 		pd.OnionBlob = make([]byte, len(wireMsg.OnionBlob))
 		copy(pd.OnionBlob, wireMsg.OnionBlob[:])
@@ -3517,6 +3534,9 @@ func (lc *LightningChannel) getUnsignedAckedUpdates() []channeldb.LogUpdate {
 				Amount:      pd.Amount,
 				Expiry:      pd.Timeout,
 				PaymentHash: pd.RHash,
+				BlindingPoint: lnwire.BlindingPoint{
+					PublicKey: pd.BlindingPoint,
+				},
 			}
 			copy(htlc.OnionBlob[:], pd.OnionBlob)
 			logUpdate.UpdateMsg = htlc
@@ -5358,6 +5378,7 @@ func (lc *LightningChannel) htlcAddDescriptor(htlc *lnwire.UpdateAddHTLC,
 		HtlcIndex:      lc.localUpdateLog.htlcCounter,
 		OnionBlob:      htlc.OnionBlob[:],
 		OpenCircuitKey: openKey,
+		BlindingPoint:  htlc.BlindingPoint.PublicKey,
 	}
 }
 
@@ -5406,13 +5427,14 @@ func (lc *LightningChannel) ReceiveHTLC(htlc *lnwire.UpdateAddHTLC) (uint64, err
 	}
 
 	pd := &PaymentDescriptor{
-		EntryType: Add,
-		RHash:     PaymentHash(htlc.PaymentHash),
-		Timeout:   htlc.Expiry,
-		Amount:    htlc.Amount,
-		LogIndex:  lc.remoteUpdateLog.logIndex,
-		HtlcIndex: lc.remoteUpdateLog.htlcCounter,
-		OnionBlob: htlc.OnionBlob[:],
+		EntryType:     Add,
+		RHash:         PaymentHash(htlc.PaymentHash),
+		Timeout:       htlc.Expiry,
+		Amount:        htlc.Amount,
+		LogIndex:      lc.remoteUpdateLog.logIndex,
+		HtlcIndex:     lc.remoteUpdateLog.htlcCounter,
+		OnionBlob:     htlc.OnionBlob[:],
+		BlindingPoint: htlc.BlindingPoint.PublicKey,
 	}
 
 	localACKedIndex := lc.remoteCommitChain.tail().ourMessageIndex
