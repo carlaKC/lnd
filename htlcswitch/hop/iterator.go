@@ -47,16 +47,24 @@ type sphinxHopIterator struct {
 	// includes the information required to properly forward the packet to
 	// the next hop.
 	processedPacket *sphinx.ProcessedPacket
+
+	// blindingKit contains the elements required to process hops that are
+	// part of a blinded route.
+	blindingKit *blindingKit
 }
 
 // makeSphinxHopIterator converts a processed packet returned from a sphinx
-// router and converts it into an hop iterator for usage in the link.
+// router and converts it into an hop iterator for usage in the link. A
+// blinding kit is passed through for the link to obtain forwarding information
+// for blinded routes.
 func makeSphinxHopIterator(ogPacket *sphinx.OnionPacket,
-	packet *sphinx.ProcessedPacket) *sphinxHopIterator {
+	packet *sphinx.ProcessedPacket,
+	blindingKit *blindingKit) *sphinxHopIterator {
 
 	return &sphinxHopIterator{
 		ogPacket:        ogPacket,
 		processedPacket: packet,
+		blindingKit:     blindingKit,
 	}
 }
 
@@ -92,7 +100,7 @@ func (r *sphinxHopIterator) HopPayload() (*Payload, error) {
 	case sphinx.PayloadTLV:
 		return NewPayloadFromReader(bytes.NewReader(
 			r.processedPacket.Payload.Payload,
-		))
+		), r.blindingKit)
 
 	default:
 		return nil, fmt.Errorf("unknown sphinx payload type: %v",
@@ -292,9 +300,9 @@ func (p *OnionProcessor) Stop() error {
 	return nil
 }
 
-// ReconstructHopIterator attempts to decode a valid sphinx packet from the passed io.Reader
-// instance using the rHash as the associated data when checking the relevant
-// MACs during the decoding process.
+// ReconstructHopIterator attempts to decode a valid sphinx packet from the
+// passed io.Reader instance using the rHash as the associated data when
+// checking the relevant MACs during the decoding process.
 func (p *OnionProcessor) ReconstructHopIterator(r io.Reader, rHash []byte) (
 	Iterator, error) {
 
@@ -308,6 +316,8 @@ func (p *OnionProcessor) ReconstructHopIterator(r io.Reader, rHash []byte) (
 	// associated data in order to thwart attempts a replay attacks. In the
 	// case of a replay, an attacker is *forced* to use the same payment
 	// hash twice, thereby losing their money entirely.
+	//
+	// TODO(carla) - We're going to need the blinding point here?
 	sphinxPacket, err := p.router.ReconstructOnionPacket(
 		onionPkt, rHash, nil,
 	)
@@ -315,7 +325,7 @@ func (p *OnionProcessor) ReconstructHopIterator(r io.Reader, rHash []byte) (
 		return nil, err
 	}
 
-	return makeSphinxHopIterator(onionPkt, sphinxPacket), nil
+	return makeSphinxHopIterator(onionPkt, sphinxPacket, nil), nil
 }
 
 // DecodeHopIteratorRequest encapsulates all date necessary to process an onion
@@ -477,7 +487,20 @@ func (p *OnionProcessor) DecodeHopIterators(id []byte,
 
 		// Finally, construct a hop iterator from our processed sphinx
 		// packet, simultaneously caching the original onion packet.
-		resp.HopIterator = makeSphinxHopIterator(&onionPkts[i], &packets[i])
+		resp.HopIterator = makeSphinxHopIterator(
+			&onionPkts[i], &packets[i], makeBlindingKit(
+				p.router, reqs[i].BlindingPoint,
+				// We are the last hop if the next hop if the
+				// processed packet's action is to exit.
+				packets[i].Action == sphinx.ExitNode,
+				// If we have a blinding point at this stage,
+				// it is from an update_add_htlc tlv (ie,
+				// not in the paylaod because we have not
+				// decoded it yet.
+				false,
+				reqs[i].IncomingAmount, reqs[i].IncomingCltv,
+			),
+		)
 	}
 
 	return resps, nil
