@@ -91,6 +91,7 @@ func (p *preimageBeacon) SubscribeUpdates(
 
 	// Notify the htlc interceptor. There may be a client connected
 	// and willing to supply a preimage.
+	fwdInfo := payload.ForwardingInfo()
 	packet := &htlcswitch.InterceptedPacket{
 		Hash:           htlc.RHash,
 		IncomingExpiry: htlc.RefundTimeout,
@@ -99,9 +100,9 @@ func (p *preimageBeacon) SubscribeUpdates(
 			ChanID: chanID,
 			HtlcID: htlc.HtlcIndex,
 		},
-		OutgoingChanID: payload.FwdInfo.NextHop,
-		OutgoingExpiry: payload.FwdInfo.OutgoingCTLV,
-		OutgoingAmount: payload.FwdInfo.AmountToForward,
+		OutgoingChanID: fwdInfo.NextHop,
+		OutgoingExpiry: fwdInfo.OutgoingCTLV,
+		OutgoingAmount: fwdInfo.AmountToForward,
 		CustomRecords:  payload.CustomRecords(),
 	}
 	copy(packet.OnionBlob[:], nextHopOnionBlob)

@@ -257,7 +257,7 @@ func (h *htlcIncomingContestResolver) Resolve() (ContractResolver, error) {
 		hodlChan       chan interface{}
 		witnessUpdates <-chan lntypes.Preimage
 	)
-	if payload.FwdInfo.NextHop == hop.Exit {
+	if payload.ForwardingInfo().NextHop == hop.Exit {
 		// Create a buffered hodl chan to prevent deadlock.
 		hodlChan = make(chan interface{}, 1)
 

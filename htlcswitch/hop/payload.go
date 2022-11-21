@@ -78,9 +78,9 @@ func (e ErrInvalidPayload) Error() string {
 // instruction can be accessed via ForwardingInfo, and additional records can be
 // accessed by other member functions.
 type Payload struct {
-	// FwdInfo holds the basic parameters required for HTLC forwarding, e.g.
+	// fwdInfo holds the basic parameters required for HTLC forwarding, e.g.
 	// amount, cltv, and next hop.
-	FwdInfo ForwardingInfo
+	fwdInfo ForwardingInfo
 
 	// MPP holds the info provided in an option_mpp record when parsed from
 	// a TLV onion payload.
@@ -105,7 +105,7 @@ func NewLegacyPayload(f *sphinx.HopData) *Payload {
 	nextHop := binary.BigEndian.Uint64(f.NextAddress[:])
 
 	return &Payload{
-		FwdInfo: ForwardingInfo{
+		fwdInfo: ForwardingInfo{
 			Network:         BitcoinNetwork,
 			NextHop:         lnwire.NewShortChanIDFromInt(nextHop),
 			AmountToForward: lnwire.MilliSatoshi(f.ForwardAmount),
@@ -186,7 +186,7 @@ func NewPayloadFromReader(r io.Reader) (*Payload, error) {
 	customRecords := NewCustomRecords(parsedTypes)
 
 	return &Payload{
-		FwdInfo: ForwardingInfo{
+		fwdInfo: ForwardingInfo{
 			Network:         BitcoinNetwork,
 			NextHop:         nextHop,
 			AmountToForward: lnwire.MilliSatoshi(amt),
@@ -202,7 +202,7 @@ func NewPayloadFromReader(r io.Reader) (*Payload, error) {
 // ForwardingInfo returns the basic parameters required for HTLC forwarding,
 // e.g. amount, cltv, and next hop.
 func (h *Payload) ForwardingInfo() ForwardingInfo {
-	return h.FwdInfo
+	return h.fwdInfo
 }
 
 // NewCustomRecords filters the types parsed from the tlv stream for custom
