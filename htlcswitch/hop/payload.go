@@ -173,7 +173,7 @@ func NewPayloadFromReader(r io.Reader, blindingKit *BlindingKit) (
 	// Validate whether the sender properly included or omitted tlv records
 	// in accordance with BOLT 04.
 	nextHop := lnwire.NewShortChanIDFromInt(cid)
-	_, err = ValidateParsedPayloadTypes(
+	activeBlindingPoint, err := ValidateParsedPayloadTypes(
 		parsedTypes, nextHop, blindingKit, blindingPoint,
 	)
 	if err != nil {
@@ -217,20 +217,40 @@ func NewPayloadFromReader(r io.Reader, blindingKit *BlindingKit) (
 	// Filter out the custom records.
 	customRecords := NewCustomRecords(parsedTypes)
 
-	return &Payload{
-		FwdInfo: ForwardingInfo{
-			Network:         BitcoinNetwork,
-			NextHop:         nextHop,
-			AmountToForward: lnwire.MilliSatoshi(amt),
-			OutgoingCTLV:    cltv,
-		},
+	payload := &Payload{
 		MPP:           mpp,
 		AMP:           amp,
 		metadata:      metadata,
 		encryptedData: encryptedData,
-		blindingPoint: blindingPoint,
+		blindingPoint: activeBlindingPoint,
 		customRecords: customRecords,
-	}, nil
+	}
+
+	// If there is no blinding point, set forwarding information from
+	// the payload. If we have a blinding point we'll get this information
+	// from the encrypted data blob, so can leave it nil for now.
+	if activeBlindingPoint == nil {
+		payload.FwdInfo = ForwardingInfo{
+			Network:         BitcoinNetwork,
+			NextHop:         nextHop,
+			AmountToForward: lnwire.MilliSatoshi(amt),
+			OutgoingCTLV:    cltv,
+		}
+	} else {
+		forwarding, err := blindingKit.forwardingInfo(
+			activeBlindingPoint, payload.encryptedData,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("decrypting blinded data "+
+				"failed: %w", err)
+		}
+
+		// If we obtained forwarding info without error, we expect this
+		// to be non-nil.
+		payload.FwdInfo = *forwarding
+	}
+
+	return payload, nil
 }
 
 // ForwardingInfo returns the basic parameters required for HTLC forwarding,
