@@ -81,6 +81,7 @@ const (
 	CodeExpiryTooFar                     FailCode = 21
 	CodeInvalidOnionPayload                       = FlagPerm | 22
 	CodeMPPTimeout                       FailCode = 23
+	CodeBadOnion                                  = FlagPerm | 24
 )
 
 // String returns the string representation of the failure code.
@@ -157,6 +158,9 @@ func (c FailCode) String() string {
 
 	case CodeMPPTimeout:
 		return "MPPTimeout"
+
+	case CodeBadOnion:
+		return "InvalidOnionBlinding"
 
 	default:
 		return "<unknown>"
@@ -1229,6 +1233,26 @@ func (f *FailMPPTimeout) Error() string {
 	return f.Code().String()
 }
 
+// FailBadOnionBlinding is returned if a payment fails at a node inside of
+// a blinded route.
+//
+// NOTE: May only be returned by nodes within a blinded route.
+type FailBadOnionBlinding struct{}
+
+// Code returns the failure unique code.
+//
+// NOTE: Part of the FailureMessage interface.
+func (f *FailBadOnionBlinding) Code() FailCode {
+	return CodeBadOnion
+}
+
+// Returns a human readable string describing the target FailureMessage.
+//
+// NOTE: Implements the error interface.
+func (f *FailBadOnionBlinding) Error() string {
+	return f.Code().String()
+}
+
 // DecodeFailure decodes, validates, and parses the lnwire onion failure, for
 // the provided protocol version.
 func DecodeFailure(r io.Reader, pver uint32) (FailureMessage, error) {
@@ -1446,6 +1470,9 @@ func makeEmptyOnionError(code FailCode) (FailureMessage, error) {
 
 	case CodeMPPTimeout:
 		return &FailMPPTimeout{}, nil
+
+	case CodeBadOnion:
+		return &FailBadOnionBlinding{}, nil
 
 	default:
 		return nil, errors.Errorf("unknown error code: %v", code)
