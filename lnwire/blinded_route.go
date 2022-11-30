@@ -24,6 +24,13 @@ type BlindingPoint struct {
 	*btcec.PublicKey
 }
 
+// NewBlindingPoint wraps a public key in the blinding point struct type.
+func NewBlindingPoint(blinding *btcec.PublicKey) BlindingPoint {
+	return BlindingPoint{
+		PublicKey: blinding,
+	}
+}
+
 // Record returns a TLV record for blinded pubkeys.
 //
 // Note: implements the RecordProducer interface.

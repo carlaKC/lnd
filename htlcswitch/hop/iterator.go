@@ -218,11 +218,17 @@ func deriveForwardingInfo(router *sphinx.Router,
 			)
 		}
 
+		nextEph, err := router.NextEphemeral(blinding)
+		if err != nil {
+			return nil, err
+		}
+
 		return &ForwardingInfo{
 			Network:         BitcoinNetwork,
 			NextHop:         nextHop,
 			AmountToForward: fwdAmt,
 			OutgoingCTLV:    expiry,
+			NextBlinding:    nextEph,
 		}, nil
 	}
 }
