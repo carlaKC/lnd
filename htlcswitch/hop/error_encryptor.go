@@ -25,12 +25,22 @@ const (
 
 	// EncrypterTypeMock is used to identify a mock obfuscator instance.
 	EncrypterTypeMock = 2
+
+	// EncrypterTypeIntroduction is used to identify a sphinx onion error
+	// encrypter instance that uses a blinding key (passed in the onion
+	// blob) to tweak the node's onion key.
+	EncrypterTypeIntroduction = 3
+
+	// EncrypterTypeBlindedRelay is used to identify a sphinx onion error
+	// encrypter instance that uses a blinding key (passed in
+	// UpdateAddHTLC) to tweak the node's onion key.
+	EncrypterTypeBlindedRelay = 4
 )
 
 // ErrorEncrypterExtracter defines a function signature that extracts an
 // ErrorEncrypter from an sphinx OnionPacket.
-type ErrorEncrypterExtracter func(*btcec.PublicKey) (ErrorEncrypter,
-	lnwire.FailCode)
+type ErrorEncrypterExtracter func(*btcec.PublicKey, BlindingKey) (
+	ErrorEncrypter, lnwire.FailCode)
 
 // ErrorEncrypter is an interface that is used to encrypt HTLC related errors
 // at the source of the error, and also at each intermediate hop all the way
@@ -82,6 +92,11 @@ type SphinxErrorEncrypter struct {
 	*sphinx.OnionErrorEncrypter
 
 	EphemeralKey *btcec.PublicKey
+
+	// BlindingKey is an optional ephemeral key used for encrypting
+	// errors in a blinded route. If the hop is not part of a blinded
+	// route, the blinding point will be nil.
+	BlindingKey BlindingKey
 }
 
 // NewSphinxErrorEncrypter initializes a blank sphinx error encrypter, that
@@ -91,11 +106,29 @@ type SphinxErrorEncrypter struct {
 //  1. Decode: to deserialize the ephemeral public key.
 //  2. Reextract: to "unlock" the actual error encrypter using an active
 //     OnionProcessor.
-func NewSphinxErrorEncrypter() *SphinxErrorEncrypter {
-	return &SphinxErrorEncrypter{
+func NewSphinxErrorEncrypter(encType EncrypterType) *SphinxErrorEncrypter {
+	encrypter := &SphinxErrorEncrypter{
 		OnionErrorEncrypter: nil,
 		EphemeralKey:        &btcec.PublicKey{},
 	}
+
+	// Fill in additional fields for encrypters in a blinded route.
+	switch encType {
+	case EncrypterTypeIntroduction:
+		encrypter.BlindingKey = BlindingKey{
+			blindingPoint:  &btcec.PublicKey{},
+			isIntroduction: true,
+		}
+
+	case EncrypterTypeBlindedRelay:
+		encrypter.BlindingKey = BlindingKey{
+			blindingPoint: &btcec.PublicKey{},
+		}
+
+	default:
+	}
+
+	return encrypter
 }
 
 // EncryptFirstHop transforms a concrete failure message into an encrypted
@@ -145,15 +178,39 @@ func (s *SphinxErrorEncrypter) IntermediateEncrypt(
 
 // Type returns the identifier for a sphinx error encrypter.
 func (s *SphinxErrorEncrypter) Type() EncrypterType {
-	return EncrypterTypeSphinx
+	// If no blinding point is present, then this is a regular sphinx
+	// encrypter.
+	if s.BlindingKey.blindingPoint == nil {
+		return EncrypterTypeSphinx
+	}
+
+	// When we have a non-nil blinding point, the encrypter type depends
+	// on the blinding key.
+	if s.BlindingKey.isIntroduction {
+		return EncrypterTypeIntroduction
+	}
+
+	return EncrypterTypeBlindedRelay
 }
 
 // Encode serializes the error encrypter' ephemeral public key to the provided
 // io.Writer.
 func (s *SphinxErrorEncrypter) Encode(w io.Writer) error {
 	ephemeral := s.EphemeralKey.SerializeCompressed()
-	_, err := w.Write(ephemeral)
-	return err
+	if _, err := w.Write(ephemeral); err != nil {
+		return err
+	}
+
+	if s.Type() == EncrypterTypeSphinx {
+		return nil
+	}
+
+	blinding := s.BlindingKey.blindingPoint.SerializeCompressed()
+	if _, err := w.Write(blinding); err != nil {
+		return fmt.Errorf("could not write blinding point: %w", err)
+	}
+
+	return nil
 }
 
 // Decode reconstructs the error encrypter's ephemeral public key from the
@@ -170,6 +227,22 @@ func (s *SphinxErrorEncrypter) Decode(r io.Reader) error {
 		return err
 	}
 
+	// If this is a regular sphinx error encrypter, we don't expect a
+	// blinding point to be saved.
+	if s.Type() == EncrypterTypeSphinx {
+		return nil
+	}
+
+	var blinding [33]byte
+	if _, err := io.ReadFull(r, blinding[:]); err != nil {
+		return err
+	}
+
+	s.BlindingKey.blindingPoint, err = btcec.ParsePubKey(blinding[:])
+	if err != nil {
+		return fmt.Errorf("could not parse blinding point: %w", err)
+	}
+
 	return nil
 }
 
@@ -179,7 +252,7 @@ func (s *SphinxErrorEncrypter) Decode(r io.Reader) error {
 func (s *SphinxErrorEncrypter) Reextract(
 	extract ErrorEncrypterExtracter) error {
 
-	obfuscator, failcode := extract(s.EphemeralKey)
+	obfuscator, failcode := extract(s.EphemeralKey, s.BlindingKey)
 	if failcode != lnwire.CodeNone {
 		// This should never happen, since we already validated that
 		// this obfuscator can be extracted when it was received in the

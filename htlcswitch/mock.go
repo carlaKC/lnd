@@ -342,7 +342,7 @@ func (r *mockHopIterator) ExtractErrorEncrypter(
 	extracter hop.ErrorEncrypterExtracter) (hop.ErrorEncrypter,
 	lnwire.FailCode) {
 
-	return extracter(nil)
+	return extracter(nil, hop.BlindingKey{})
 }
 
 func (r *mockHopIterator) EncodeNextHop(w io.Writer) error {

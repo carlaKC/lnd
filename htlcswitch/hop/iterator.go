@@ -117,7 +117,7 @@ func (r *sphinxHopIterator) HopPayload() (*Payload, error) {
 func (r *sphinxHopIterator) ExtractErrorEncrypter(
 	extracter ErrorEncrypterExtracter) (ErrorEncrypter, lnwire.FailCode) {
 
-	return extracter(r.ogPacket.EphemeralKey)
+	return extracter(r.ogPacket.EphemeralKey, r.blindingKit.BlindingKey)
 }
 
 // BlindingKey represents an ephemeral blinding point that is provided to nodes
@@ -511,11 +511,11 @@ func (p *OnionProcessor) DecodeHopIterators(id []byte,
 // ErrorEncrypter instance using the derived shared secret. In the case that en
 // error occurs, a lnwire failure code detailing the parsing failure will be
 // returned.
-func (p *OnionProcessor) ExtractErrorEncrypter(ephemeralKey *btcec.PublicKey) (
-	ErrorEncrypter, lnwire.FailCode) {
+func (p *OnionProcessor) ExtractErrorEncrypter(ephemeralKey *btcec.PublicKey,
+	blindingKey BlindingKey) (ErrorEncrypter, lnwire.FailCode) {
 
 	onionObfuscator, err := sphinx.NewOnionErrorEncrypter(
-		p.router, ephemeralKey, nil,
+		p.router, ephemeralKey, blindingKey.blindingPoint,
 	)
 	if err != nil {
 		switch err {
@@ -534,5 +534,6 @@ func (p *OnionProcessor) ExtractErrorEncrypter(ephemeralKey *btcec.PublicKey) (
 	return &SphinxErrorEncrypter{
 		OnionErrorEncrypter: onionObfuscator,
 		EphemeralKey:        ephemeralKey,
+		BlindingKey:         blindingKey,
 	}, lnwire.CodeNone
 }
