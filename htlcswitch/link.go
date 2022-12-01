@@ -2987,7 +2987,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 			// should send the malformed htlc error to payment
 			// sender.
 			l.sendMalformedHTLCError(pd.HtlcIndex, failureCode,
-				onionBlob[:], pd.SourceRef)
+				onionBlob[:], pd.SourceRef, nil) // TODO - we don't have an obfuscator here yet
 
 			l.log.Errorf("unable to decode onion hop "+
 				"iterator: %v", failureCode)
@@ -3004,7 +3004,8 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 			// should send the malformed htlc error to payment
 			// sender.
 			l.sendMalformedHTLCError(
-				pd.HtlcIndex, failureCode, onionBlob[:], pd.SourceRef,
+				pd.HtlcIndex, failureCode, onionBlob[:],
+				pd.SourceRef, obfuscator,
 			)
 
 			l.log.Errorf("unable to decode onion "+
@@ -3153,7 +3154,8 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				)
 
 				l.sendHTLCError(
-					pd, NewLinkError(failure), obfuscator, false,
+					pd, NewLinkError(failure), obfuscator,
+					false,
 				)
 				continue
 			}
@@ -3370,7 +3372,8 @@ func (l *channelLink) forwardBatch(replay bool, packets ...*htlcPacket) {
 // sendHTLCError functions cancels HTLC and send cancel message back to the
 // peer from which HTLC was received.
 func (l *channelLink) sendHTLCError(pd *lnwallet.PaymentDescriptor,
-	failure *LinkError, e hop.ErrorEncrypter, isReceive bool) {
+	failure *LinkError, e hop.ErrorEncrypter,
+	isReceive bool) {
 
 	reason, err := e.EncryptFirstHop(failure.WireMessage())
 	if err != nil {
@@ -3384,11 +3387,15 @@ func (l *channelLink) sendHTLCError(pd *lnwallet.PaymentDescriptor,
 		return
 	}
 
-	l.cfg.Peer.SendMessage(false, &lnwire.UpdateFailHTLC{
-		ChanID: l.ChanID(),
-		ID:     pd.HtlcIndex,
-		Reason: reason,
-	})
+	msg := l.blindedRelayError(
+		pd.HtlcIndex, pd.OnionBlob, e.Type(), &lnwire.UpdateFailHTLC{
+			ChanID: l.ChanID(),
+			ID:     pd.HtlcIndex,
+			Reason: reason,
+		},
+	)
+
+	l.cfg.Peer.SendMessage(false, msg)
 
 	// Notify a link failure on our incoming link. Outgoing htlc information
 	// is not available at this point, because we have not decrypted the
@@ -3420,7 +3427,8 @@ func (l *channelLink) sendHTLCError(pd *lnwallet.PaymentDescriptor,
 // sendMalformedHTLCError helper function which sends the malformed HTLC update
 // to the payment sender.
 func (l *channelLink) sendMalformedHTLCError(htlcIndex uint64,
-	code lnwire.FailCode, onionBlob []byte, sourceRef *channeldb.AddRef) {
+	code lnwire.FailCode, onionBlob []byte, sourceRef *channeldb.AddRef,
+	obfuscator hop.ErrorEncrypter) {
 
 	shaOnionBlob := sha256.Sum256(onionBlob)
 	err := l.channel.MalformedFailHTLC(htlcIndex, code, shaOnionBlob, sourceRef)
@@ -3429,12 +3437,62 @@ func (l *channelLink) sendMalformedHTLCError(htlcIndex uint64,
 		return
 	}
 
-	l.cfg.Peer.SendMessage(false, &lnwire.UpdateFailMalformedHTLC{
-		ChanID:       l.ChanID(),
-		ID:           htlcIndex,
-		ShaOnionBlob: shaOnionBlob,
-		FailureCode:  code,
-	})
+	msg := l.blindedRelayError(
+		htlcIndex, onionBlob, obfuscator.Type(),
+		&lnwire.UpdateFailMalformedHTLC{
+			ChanID:       l.ChanID(),
+			ID:           htlcIndex,
+			ShaOnionBlob: shaOnionBlob,
+			FailureCode:  code,
+		},
+	)
+
+	l.cfg.Peer.SendMessage(false, msg)
+}
+
+// blindedRelayError replaces htlc failure messages with more generic failures
+// if the HTLC is part of a blinded route. If the message is not in a blinded
+// route, it is just returned as-is. The changes applied depend on the location
+// in the route:
+// 1. Introduction Node: Must send back an UpdateFailHTLC with invalid onion
+//    blinding reason.
+// 2. Relaying Node: Must send back an UpdateFailMalformedHTLC with invalid
+//    onion blinding reason.
+//
+// The function takes a logger as a parameter so that any switched out errors
+// can be appropriately logged for node operator transparency.
+func (l *channelLink) blindedRelayError(htlcIndex uint64, onionBlob []byte,
+	encrypterType hop.EncrypterType, msg lnwire.Message) lnwire.Message {
+
+	chanID := l.ChanID()
+
+	switch encrypterType {
+	case hop.EncrypterTypeIntroduction:
+		l.log.Infof("Failure: %v for blinded route introduction "+
+			"node on: %v replaced with invalid blinding failure",
+			msg.MsgType(), chanID)
+
+		return &lnwire.UpdateFailHTLC{
+			ChanID: chanID,
+			ID:     htlcIndex,
+			Reason: nil,
+		}
+
+	case hop.EncrypterTypeBlindedRelay:
+		l.log.Infof("Failure: %v for blinded route relay node on: "+
+			"%v replaced with malformed error", msg.MsgType(),
+			chanID)
+
+		return &lnwire.UpdateFailMalformedHTLC{
+			ChanID:       chanID,
+			ID:           htlcIndex,
+			ShaOnionBlob: sha256.Sum256(onionBlob),
+			FailureCode:  lnwire.CodeBadOnion,
+		}
+
+	default:
+		return msg
+	}
 }
 
 // fail is a function which is used to encapsulate the action necessary for
