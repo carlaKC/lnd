@@ -1,6 +1,7 @@
 package itest
 
 import (
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
 	sphinx "github.com/lightningnetwork/lightning-onion"
@@ -121,6 +122,108 @@ func setupFourHopNetwork(t *harnessTest, net *lntest.NetworkHarness,
 		lnwire.NewShortChanIDFromInt(bobChan.ChanId),
 		lnwire.NewShortChanIDFromInt(carolChan.ChanId),
 	}
+}
+
+// createBlindedRoute creates a blinded route to the recipient node provided.
+// The set of hops is expected to start at the introduction node and end at
+// the recipient.
+func createBlindedRoute(t *harnessTest,
+	hops []*forwardingEdge, dest *btcec.PublicKey) *BlindedPayment {
+
+	var (
+		aggregateRelay       = &lnwire.PaymentRelayInfo{}
+		aggregateConstraints = &lnwire.PaymentConstraints{}
+	)
+
+	blindingKey, err := btcec.NewPrivateKey()
+	require.NoError(t.t, err)
+
+	// Create a path with space for each of our hops + the destination
+	// node.
+	pathLength := len(hops) + 1
+	blindedPath := make([]*sphinx.BlindedPathHop, pathLength)
+
+	for i := 0; i < len(hops); i++ {
+		node := hops[i]
+		payload := &lnwire.BlindedRouteData{
+			NextNodeID:     node.pubkey,
+			ShortChannelID: &node.channelID,
+		}
+
+		// Add the next hop's ID for all nodes that have a next hop.
+		if i < len(hops)-1 {
+			nextHop := hops[i+1]
+
+			payload.NextNodeID = nextHop.pubkey
+			payload.ShortChannelID = &node.channelID
+		}
+
+		// Set the relay information for this edge, and add it to our
+		// aggregate info and update our aggregate constraints.
+		payload.RelayInfo = &lnwire.PaymentRelayInfo{
+			FeeBase:        uint32(node.edge.FeeBaseMsat),
+			FeeProportinal: uint32(node.edge.FeeRateMilliMsat),
+			CltvDelta:      uint16(node.edge.TimeLockDelta),
+		}
+
+		payload.Constraints = &lnwire.PaymentConstraints{
+			HtlcMinimumMsat: lnwire.MilliSatoshi(node.edge.MinHtlc),
+		}
+
+		aggregateRelay.FeeBase += payload.RelayInfo.FeeBase
+		aggregateRelay.FeeProportinal += payload.RelayInfo.FeeProportinal
+		aggregateRelay.CltvDelta += payload.RelayInfo.CltvDelta
+
+		if payload.Constraints.HtlcMinimumMsat <
+			aggregateConstraints.HtlcMinimumMsat {
+
+			aggregateConstraints.HtlcMinimumMsat =
+				payload.Constraints.HtlcMinimumMsat
+		}
+
+		// Encode the route's blinded data and include it in the
+		// blinded hop.
+		payloadBytes, err := lnwire.EncodeBlindedRouteData(payload)
+		require.NoError(t.t, err)
+
+		blindedPath[i] = &sphinx.BlindedPathHop{
+			NodePub: node.pubkey,
+			Payload: payloadBytes,
+		}
+	}
+
+	// Add our destination node at the end of the path. We don't need to
+	// add any forwarding parameters because we're at the final hop.
+	payloadBytes, err := lnwire.EncodeBlindedRouteData(
+		&lnwire.BlindedRouteData{
+			// TODO: We shouldn't have a next node ID here (but
+			// path ID isn't yet supported).
+			NextNodeID: dest,
+		},
+	)
+	require.NoError(t.t, err, "final payload")
+
+	blindedPath[pathLength-1] = &sphinx.BlindedPathHop{
+		NodePub: dest,
+		Payload: payloadBytes,
+	}
+
+	blinded, err := sphinx.BuildBlindedPath(blindingKey, blindedPath)
+	require.NoError(t.t, err, "build blinded path")
+
+	return &BlindedPayment{
+		BlindedPath:          blinded,
+		AggregateRelay:       aggregateRelay,
+		AggregateConstraints: aggregateConstraints,
+	}
+}
+
+// forwardingEdge contains the channel id/source public key for a forwarding
+// edge and the policy associated with the channel in that direction.
+type forwardingEdge struct {
+	pubkey    *btcec.PublicKey
+	channelID lnwire.ShortChannelID
+	edge      *lnrpc.RoutingPolicy
 }
 
 // testForwardBlindedRoute tests lnd's ability to forward payments in a blinded
