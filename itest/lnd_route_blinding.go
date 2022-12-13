@@ -11,6 +11,8 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/routerrpc"
 	"github.com/lightningnetwork/lnd/lntest"
+	"github.com/lightningnetwork/lnd/lntest/node"
+	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -327,4 +329,93 @@ func testQueryBlindedRoutes(ht *lntest.HarnessTest) {
 
 	ht.CloseChannel(alice, chanPointAliceBob)
 	ht.CloseChannel(bob, chanPointBobCarol)
+}
+
+type blindedForwardTest struct {
+	ht    *lntest.HarnessTest
+	carol *node.HarnessNode
+	dave  *node.HarnessNode
+}
+
+func newBlindedForwardTest(ht *lntest.HarnessTest) *blindedForwardTest {
+	return &blindedForwardTest{
+		ht: ht,
+	}
+}
+
+// setup spins up additional nodes needed for our test and creates a four hop
+// network for testing blinded forwarding.
+func (b *blindedForwardTest) setup() {
+	b.carol = b.ht.NewNode("Carol", nil)
+	b.dave = b.ht.NewNode("Dave", nil)
+
+	setupFourHopNetwork(b.ht, b.carol, b.dave)
+}
+
+// setupFourHopNetwork creates a network with the following topology and
+// liquidity:
+// Alice (100k)----- Bob (100k) ----- Carol (100k) ----- Dave
+//
+// The funding outpoint for AB / BC / CD are returned in-order.
+func setupFourHopNetwork(ht *lntest.HarnessTest,
+	carol, dave *node.HarnessNode) []lnwire.ShortChannelID {
+
+	const chanAmt = btcutil.Amount(100000)
+	var networkChans []*lnrpc.ChannelPoint
+
+	// Open a channel with 100k satoshis between Alice and Bob with Alice
+	// being the sole funder of the channel.
+	chanPointAlice := ht.OpenChannel(
+		ht.Alice, ht.Bob, lntest.OpenChannelParams{
+			Amt: chanAmt,
+		},
+	)
+	networkChans = append(networkChans, chanPointAlice)
+
+	aliceChan := ht.GetChannelByChanPoint(ht.Alice, chanPointAlice)
+
+	// Create a channel between bob and carol.
+	ht.EnsureConnected(ht.Bob, carol)
+	chanPointBob := ht.OpenChannel(
+		ht.Bob, carol, lntest.OpenChannelParams{
+			Amt: chanAmt,
+		},
+	)
+	networkChans = append(networkChans, chanPointBob)
+
+	bobChan := ht.GetChannelByChanPoint(ht.Bob, chanPointBob)
+
+	// Fund carol and connect her and dave so that she can create a channel
+	// between them.
+	ht.FundCoins(btcutil.SatoshiPerBitcoin, carol)
+	ht.EnsureConnected(carol, dave)
+
+	chanPointCarol := ht.OpenChannel(
+		carol, dave, lntest.OpenChannelParams{
+			Amt: chanAmt,
+		},
+	)
+	networkChans = append(networkChans, chanPointCarol)
+
+	carolChan := ht.GetChannelByChanPoint(carol, chanPointCarol)
+
+	// Wait for all nodes to have seen all channels.
+	nodes := []*node.HarnessNode{ht.Alice, ht.Bob, carol, dave}
+	for _, chanPoint := range networkChans {
+		for _, node := range nodes {
+			ht.AssertTopologyChannelOpen(node, chanPoint)
+		}
+	}
+
+	return []lnwire.ShortChannelID{
+		lnwire.NewShortChanIDFromInt(aliceChan.ChanId),
+		lnwire.NewShortChanIDFromInt(bobChan.ChanId),
+		lnwire.NewShortChanIDFromInt(carolChan.ChanId),
+	}
+}
+
+// testForwardBlindedRoute tests lnd's ability to forward payments in a blinded
+// route.
+func testForwardBlindedRoute(ht *lntest.HarnessTest) {
+	newBlindedForwardTest(ht)
 }
