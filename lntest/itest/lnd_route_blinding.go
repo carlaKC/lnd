@@ -1,6 +1,8 @@
 package itest
 
 import (
+	"context"
+
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
@@ -226,14 +228,57 @@ type forwardingEdge struct {
 	edge      *lnrpc.RoutingPolicy
 }
 
+func getForwardingEdge(ctxb context.Context, t *harnessTest,
+	node *lntest.HarnessNode, chanID uint64) *forwardingEdge {
+
+	ctxt, cancel := context.WithTimeout(ctxb, defaultTimeout)
+	chanInfo, err := node.GetChanInfo(ctxt, &lnrpc.ChanInfoRequest{
+		ChanId: chanID,
+	})
+	cancel()
+	require.NoError(t.t, err, "%v chan info", node.Cfg.Name)
+
+	pubkey, err := btcec.ParsePubKey(node.PubKey[:])
+	require.NoError(t.t, err, "%v pubkey", node.Cfg.Name)
+
+	fwdEdge := &forwardingEdge{
+		pubkey:    pubkey,
+		channelID: lnwire.NewShortChanIDFromInt(chanID),
+	}
+
+	if chanInfo.Node1Pub == node.PubKeyStr {
+		fwdEdge.edge = chanInfo.Node1Policy
+	} else {
+		require.Equal(t.t, node.PubKeyStr, chanInfo.Node2Pub,
+			"policy edge sanity check")
+
+		fwdEdge.edge = chanInfo.Node2Policy
+	}
+
+	return fwdEdge
+}
+
 // testForwardBlindedRoute tests lnd's ability to forward payments in a blinded
 // route.
 func testForwardBlindedRoute(net *lntest.NetworkHarness, t *harnessTest) {
+	ctxb := context.Background()
+
 	carol := net.NewNode(t.t, "Carol", nil)
 	defer shutdownAndAssert(net, t, carol)
 
 	dave := net.NewNode(t.t, "Dave", nil)
 	defer shutdownAndAssert(net, t, dave)
 
-	setupFourHopNetwork(t, net, carol, dave)
+	chans := setupFourHopNetwork(t, net, carol, dave)
+
+	// Create a blinded route to Dave via Bob --- Carol --- Dave:
+	edges := []*forwardingEdge{
+		getForwardingEdge(ctxb, t, net.Bob, chans[1].ToUint64()),
+		getForwardingEdge(ctxb, t, carol, chans[2].ToUint64()),
+	}
+
+	davePk, err := btcec.ParsePubKey(dave.PubKey[:])
+	require.NoError(t.t, err, "dave pubkey")
+
+	createBlindedRoute(t, edges, davePk)
 }
