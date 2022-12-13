@@ -1,6 +1,10 @@
 package record
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/lightningnetwork/lnd/tlv"
+)
 
 const (
 	// CustomTypeStart is the start of the custom tlv type range as defined
@@ -14,6 +18,17 @@ type CustomSet map[uint64][]byte
 // Validate checks that all custom records are in the custom type range.
 func (c CustomSet) Validate() error {
 	for key := range c {
+		// Temporarily overwrite these two custom data types.
+		if tlv.Type(key) == EncryptedDataOnionType {
+			fmt.Println("Allowing encrypted onion data custom")
+			continue
+		}
+
+		if tlv.Type(key) == BlindingPointOnionType {
+			fmt.Println("Allowing blinding onion type")
+			continue
+		}
+
 		if key < CustomTypeStart {
 			return fmt.Errorf("no custom records with types "+
 				"below %v allowed", CustomTypeStart)
