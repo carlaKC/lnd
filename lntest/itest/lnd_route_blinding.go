@@ -2,6 +2,7 @@ package itest
 
 import (
 	"context"
+	"encoding/hex"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -258,6 +259,36 @@ func getForwardingEdge(ctxb context.Context, t *harnessTest,
 	return fwdEdge
 }
 
+// blindedRouteHints expresses a blinded route as a set of chained hop hints.
+// This allows us to use our existing pathfinding to work with blinded routes.
+func blindedRouteHints(route *BlindedPayment) []*lnrpc.HopHint {
+
+	introNode := route.BlindedPath.IntroductionPoint.SerializeCompressed()
+	relay := route.AggregateRelay
+	hints := make([]*lnrpc.HopHint, len(route.BlindedPath.BlindedHops)-1)
+
+	// We use the aggregate parameters for the whole route as our forwarding
+	// parameters for the introduction hop. This allows us to set the
+	// remaining blinded hops as zero (which is how we want them set
+	// anyway).
+	hints[0] = &lnrpc.HopHint{
+		NodeId:                    hex.EncodeToString(introNode),
+		FeeBaseMsat:               relay.FeeBase,
+		FeeProportionalMillionths: relay.FeeProportinal,
+		CltvExpiryDelta:           uint32(relay.CltvDelta),
+	}
+
+	for i := 1; i < len(route.BlindedPath.BlindedHops)-1; i++ {
+		node := route.BlindedPath.BlindedHops[i].SerializeCompressed()
+
+		hints[i] = &lnrpc.HopHint{
+			NodeId: hex.EncodeToString(node),
+		}
+	}
+
+	return hints
+}
+
 // testForwardBlindedRoute tests lnd's ability to forward payments in a blinded
 // route.
 func testForwardBlindedRoute(net *lntest.NetworkHarness, t *harnessTest) {
@@ -280,5 +311,40 @@ func testForwardBlindedRoute(net *lntest.NetworkHarness, t *harnessTest) {
 	davePk, err := btcec.ParsePubKey(dave.PubKey[:])
 	require.NoError(t.t, err, "dave pubkey")
 
-	createBlindedRoute(t, edges, davePk)
+	// We expect three entires in our blinded hops (the introduction node
+	// and two blinded hops).
+	route := createBlindedRoute(t, edges, davePk)
+	require.Len(t.t, route.BlindedPath.BlindedHops, 3, "blinded hops")
+
+	// Produce a chain of hop hints to represent our blinded path, we
+	// expect this to consist of two hops (Bob -> Carol / Carol -> Dave).
+	hints := blindedRouteHints(route)
+	require.Len(t.t, hints, 2, "hop hints")
+
+	// Once we have a blinded route, we want to construct a route from
+	// Alice to the blinded route.
+	ctxt, cancel := context.WithTimeout(ctxb, defaultTimeout)
+	target := route.BlindedPath.BlindedHops[len(route.BlindedPath.BlindedHops)-1]
+
+	var paymentAmt int64 = 100_000
+	resp, err := net.Alice.QueryRoutes(ctxt, &lnrpc.QueryRoutesRequest{
+		PubKey:  hex.EncodeToString(target.SerializeCompressed()),
+		AmtMsat: paymentAmt,
+		// Our fee limit doesn't really matter, we just want to
+		// be able to make the payment.
+		FeeLimit: &lnrpc.FeeLimit{
+			Limit: &lnrpc.FeeLimit_Percent{
+				Percent: 50,
+			},
+		},
+		RouteHints: []*lnrpc.RouteHint{
+			{
+				HopHints: hints,
+			},
+		},
+	})
+	cancel()
+	require.NoError(t.t, err, "query routes")
+	require.Greater(t.t, len(resp.Routes), 0, "no routes")
+	require.Len(t.t, resp.Routes[0].Hops, 3, "unexpected route length")
 }
