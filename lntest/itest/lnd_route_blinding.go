@@ -339,6 +339,8 @@ type blindedForwardTest struct {
 	carol *node.HarnessNode
 	dave  *node.HarnessNode
 
+	preimage [33]byte
+
 	// ctx is a context to be used by the test.
 	ctx context.Context //nolint:containedctx
 
@@ -350,9 +352,10 @@ func newBlindedForwardTest(ht *lntemp.HarnessTest) *blindedForwardTest {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &blindedForwardTest{
-		ht:     ht,
-		ctx:    ctx,
-		cancel: cancel,
+		ht:       ht,
+		ctx:      ctx,
+		cancel:   cancel,
+		preimage: [33]byte{1, 2, 3},
 	}
 }
 
@@ -442,6 +445,29 @@ func (b *blindedForwardTest) createRouteToBlinded(paymentAmt int64,
 	require.Len(b.ht, resp.Routes[0].Hops, 3, "unexpected route length")
 
 	return resp.Routes[0]
+}
+
+// sendBlindedPayment dispatches a payment to the route provided. The streaming
+// client for the send is returned with a cancel function that can be used to
+// terminate the stream.
+func (b *blindedForwardTest) sendBlindedPayment(route *lnrpc.Route) (
+	lnrpc.Lightning_SendToRouteClient, func()) {
+
+	hash := sha256.Sum256(b.preimage[:])
+
+	ctxt, cancel := context.WithCancel(b.ctx)
+	sendReq := &lnrpc.SendToRouteRequest{
+		PaymentHash: hash[:],
+		Route:       route,
+	}
+
+	sendClient, err := b.ht.Alice.RPC.LN.SendToRoute(ctxt)
+	require.NoError(b.ht, err, "send to route client")
+
+	err = sendClient.SendMsg(sendReq)
+	require.NoError(b.ht, err, "send to route request")
+
+	return sendClient, cancel
 }
 
 // setupFourHopNetwork creates a network with the following topology and
@@ -653,5 +679,7 @@ func testForwardBlindedRoute(ht *lntemp.HarnessTest) {
 	defer testCase.cancel()
 
 	route := testCase.setup()
-	testCase.createRouteToBlinded(100_000, route)
+	blindedRoute := testCase.createRouteToBlinded(100_000, route)
+
+	testCase.sendBlindedPayment(blindedRoute)
 }
