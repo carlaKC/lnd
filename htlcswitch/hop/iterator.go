@@ -112,6 +112,32 @@ func (r *sphinxHopIterator) ExtractErrorEncrypter(
 	return extracter(r.ogPacket.EphemeralKey)
 }
 
+// calculateForwardingAmount calculates the amount to forward for a blinded
+// hop based on the incoming amount and forwarding parameters.
+func calculateForwardingAmount(incomingAmount lnwire.MilliSatoshi, baseFee,
+	proportionalFee uint32) (lnwire.MilliSatoshi, error) {
+
+	// proportionalParts is the number of parts that our proportional fee
+	// is expressed per.
+	var proportionalParts uint64 = 1_000_000
+
+	// Sanity check to prevent overflow.
+	if incomingAmount < lnwire.MilliSatoshi(baseFee) {
+		return 0, fmt.Errorf("incoming amount: %v < base fee: %v",
+			incomingAmount, baseFee)
+	}
+	// Our amount to forward is expressed as:
+	// (incoming amount - base fee) / ( 1 + proportional_fee / 1000_000)
+	//
+	// Using integer arithmetic to produce ceil(a/b), we calculate this
+	// value as (a+b-1)/b.
+	ceiling := ((uint64(incomingAmount) - uint64(baseFee)) +
+		(1 + uint64(proportionalFee)/proportionalParts) - 1) /
+		(1 + uint64(proportionalFee)/proportionalParts)
+
+	return lnwire.MilliSatoshi(ceiling), nil
+}
+
 // OnionProcessor is responsible for keeping all sphinx dependent parts inside
 // and expose only decoding function. With such approach we give freedom for
 // subsystems which wants to decode sphinx path to not be dependable from
