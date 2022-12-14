@@ -112,6 +112,121 @@ func (r *sphinxHopIterator) ExtractErrorEncrypter(
 	return extracter(r.ogPacket.EphemeralKey)
 }
 
+// BlindingKey represents an ephemeral blinding point that is provided to nodes
+// inside of a blinded route. Blinding keys are obtained from different places
+// based on the node's location in the route:
+// 1. Introduction Node: extracted from the onion payload
+// 2. Relaying Node: included as a TLV in update_add_htlc
+//
+// This struct also tracks the location that the blinding key was obtained from
+// because error handling for nodes in a blinded route depends on the node
+// location.
+type BlindingKey struct {
+	// blindingPoint is an ephemeral blinding key.
+	blindingPoint *btcec.PublicKey
+
+	// isIntroduction is true if the blinding key was transmitted to our
+	// node within the onion payload. This indicates that the node plays
+	// the special its role of connecting unblinded and blinded portions of
+	// the route.
+	isIntroduction bool
+}
+
+// blindingKit contains the components required to extract forwarding
+// information for hops in a blinded route.
+type blindingKit struct {
+	// BlindingKey holds the ephemeral key to be used for the hop.
+	BlindingKey
+
+	// lastHop indicates whether we're in the last hop in the onion route.
+	lastHop bool
+
+	// forwardingInfo uses the ephemeral blinding key provided to decrypt
+	// a blob of encrypted data provided in the onion and obtain the
+	// forwarding information for the blinded hop.
+	forwardingInfo func(*btcec.PublicKey, []byte) (*ForwardingInfo,
+		error)
+}
+
+// blindingPoint is a convenience function used to extract the blinding point
+// from a blinding kit.
+func (b *blindingKit) blindingPoint() *btcec.PublicKey {
+	return b.BlindingKey.blindingPoint
+}
+
+func makeBlindingKit(router *sphinx.Router, blindingPoint *btcec.PublicKey,
+	lastHop, isIntroduction bool, incomingAmount lnwire.MilliSatoshi,
+	incomingCltv uint32) *blindingKit {
+
+	return &blindingKit{
+		BlindingKey: BlindingKey{
+			blindingPoint:  blindingPoint,
+			isIntroduction: isIntroduction,
+		},
+		lastHop: lastHop,
+		forwardingInfo: deriveForwardingInfo(
+			router, incomingAmount, incomingCltv,
+		),
+	}
+}
+
+// deriveForwardingInfo produces a function that will decrypt and deserialize
+// an encrypted blob of data for a hop in a blinded route and reconstruct the
+// forwarding information for the hop from the information provided.
+func deriveForwardingInfo(router *sphinx.Router,
+	incomingAmount lnwire.MilliSatoshi, incomingCltv uint32) func(
+	*btcec.PublicKey, []byte) (*ForwardingInfo, error) {
+
+	return func(blinding *btcec.PublicKey, data []byte) (*ForwardingInfo,
+		error) {
+
+		decrypted, err := router.DecryptBlindedData(blinding, data)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt blinded data: %w", err)
+		}
+
+		b := bytes.NewBuffer(decrypted)
+		routeData, err := lnwire.DecodeBlindedRouteData(b)
+		if err != nil {
+			return nil, fmt.Errorf("decode route data: %w", err)
+		}
+
+		// If we have our short channel ID or expiry present, set
+		// values in our forwarding information (defaulting to zero
+		// values otherwise).
+		var (
+			nextHop = Exit
+			expiry  uint32
+			fwdAmt  lnwire.MilliSatoshi
+		)
+
+		if routeData.ShortChannelID != nil {
+			nextHop = *routeData.ShortChannelID
+		}
+
+		if routeData.RelayInfo != nil {
+			fwdAmt, err = calculateForwardingAmount(
+				incomingAmount, routeData.RelayInfo.FeeBase,
+				routeData.RelayInfo.FeeProportinal,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			expiry = incomingCltv - uint32(
+				routeData.RelayInfo.CltvDelta,
+			)
+		}
+
+		return &ForwardingInfo{
+			Network:         BitcoinNetwork,
+			NextHop:         nextHop,
+			AmountToForward: fwdAmt,
+			OutgoingCTLV:    expiry,
+		}, nil
+	}
+}
+
 // calculateForwardingAmount calculates the amount to forward for a blinded
 // hop based on the incoming amount and forwarding parameters.
 func calculateForwardingAmount(incomingAmount lnwire.MilliSatoshi, baseFee,
