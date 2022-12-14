@@ -185,6 +185,7 @@ func deriveForwardingInfo(router *sphinx.Router,
 	incomingAmount lnwire.MilliSatoshi, incomingCltv uint32) func(
 	*btcec.PublicKey, []byte) (*ForwardingInfo, error) {
 
+	fmt.Println("CKC incoming amount: ", incomingAmount)
 	return func(blinding *btcec.PublicKey, data []byte) (*ForwardingInfo,
 		error) {
 
@@ -224,6 +225,8 @@ func deriveForwardingInfo(router *sphinx.Router,
 			expiry = incomingCltv - uint32(
 				routeData.RelayInfo.CltvDelta,
 			)
+
+			fmt.Println("CKC Forward amount: ", fwdAmt)
 		}
 
 		nextEph, err := router.NextEphemeral(blinding)

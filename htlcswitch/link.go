@@ -3243,6 +3243,7 @@ func (l *channelLink) processExitHop(pd *lnwallet.PaymentDescriptor,
 	// matches the HTLC we were extended.
 	if pd.Amount != fwdInfo.AmountToForward {
 
+		// HERE!
 		l.log.Errorf("onion payload of incoming htlc(%x) has incorrect "+
 			"value: expected %v, got %v", pd.RHash,
 			pd.Amount, fwdInfo.AmountToForward)
