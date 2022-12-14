@@ -1,9 +1,11 @@
 package itest
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"testing"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	sphinx "github.com/lightningnetwork/lightning-onion"
 	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lnrpc/routerrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/record"
@@ -425,6 +428,51 @@ func testForwardBlindedRoute(net *lntest.NetworkHarness, t *harnessTest) {
 	preimage := [32]byte{1, 2, 3}
 	hash := sha256.Sum256(preimage[:])
 
+	// Receiving via blinded routes is not yet supported, so Dave won't be
+	// able to process the payment.
+	//
+	// We have an interceptor at our disposal that will catch htlcs as they
+	// are forwarded (ie, it won't intercept a HTLC that dave is receiving,
+	// since no forwarding occurs). We initiate this interceptor with
+	// Carol, so that we can catch it and settle on the outgoing link to
+	// Dave. Once we hit the outgoing link, we know that we successfully
+	// parsed the htlc, so this is an acceptable compromise.
+	ctxc, cancelInterceptor := context.WithCancel(ctxb)
+	defer cancelInterceptor()
+
+	interceptor, err := carol.RouterClient.HtlcInterceptor(ctxc)
+	require.NoError(t.t, err, "interceptor")
+
+	// Create an error channel to deliver any interceptor errors.
+	errChan := make(chan error)
+	go func() {
+		forward, err := interceptor.Recv()
+		if err != nil {
+			errChan <- err
+			return
+		}
+
+		if forward.OutgoingAmountMsat != uint64(paymentAmt) {
+			errChan <- fmt.Errorf("incorrect amount sent to "+
+				"dave: %v", forward.OutgoingAmountMsat)
+
+			return
+		}
+		if !bytes.Equal(forward.PaymentHash, hash[:]) {
+			errChan <- fmt.Errorf("Unexpected payment hash: %v",
+				hash)
+			return
+		}
+
+		resp := &routerrpc.ForwardHtlcInterceptResponse{
+			IncomingCircuitKey: forward.IncomingCircuitKey,
+			Action:             routerrpc.ResolveHoldForwardAction_SETTLE,
+			Preimage:           preimage[:],
+		}
+
+		errChan <- interceptor.Send(resp)
+	}()
+
 	ctxt, cancel = context.WithTimeout(ctxb, time.Minute)
 	sendResp, err := net.Alice.SendToRouteSync(ctxt, &lnrpc.SendToRouteRequest{
 		PaymentHash: hash[:],
@@ -437,6 +485,14 @@ func testForwardBlindedRoute(net *lntest.NetworkHarness, t *harnessTest) {
 	})
 	cancel()
 	require.NoError(t.t, err, "send to route")
-
 	require.Equal(t.t, "", sendResp.PaymentError, "send error")
+
+	// Assert that our interceptor has exited without an error.
+	select {
+	case err := <-errChan:
+		require.NoError(t.t, err, "interceptor error")
+
+	case <-time.After(defaultTimeout):
+		t.Fatalf("interceptor did not exit")
+	}
 }
