@@ -3,8 +3,10 @@ package hop
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/davecgh/go-spew/spew"
 	sphinx "github.com/lightningnetwork/lightning-onion"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -149,6 +151,165 @@ func TestForwardingAmountCalc(t *testing.T) {
 
 			require.Equal(t, testCase.expectErr, err != nil)
 			require.Equal(t, testCase.forwardAmount, actual)
+		})
+	}
+}
+
+// TestDeriveForwarding tests deriving forwarding information from blinded
+// route data.
+func TestDeriveForwarding(t *testing.T) {
+	t.Parallel()
+
+	chanID := lnwire.NewShortChanIDFromInt(1)
+	tests := []struct {
+		name         string
+		incomingAmt  lnwire.MilliSatoshi
+		incomingCltv uint32
+		data         *record.BlindedRouteData
+		fwdInfo      *ForwardingInfo
+		err          error
+	}{
+		{
+			name:         "no next hop",
+			incomingAmt:  100,
+			incomingCltv: 50,
+			data:         &record.BlindedRouteData{},
+			fwdInfo: &ForwardingInfo{
+				NextHop:         Exit,
+				AmountToForward: 100,
+				OutgoingCTLV:    50,
+			},
+			err: ErrNoNextChanID,
+		},
+		{
+			name:         "relay info provided",
+			incomingAmt:  100,
+			incomingCltv: 50,
+			data: &record.BlindedRouteData{
+				ShortChannelID: &chanID,
+				RelayInfo: &record.PaymentRelayInfo{
+					CltvExpiryDelta: 40,
+					BaseFee:         20,
+				},
+			},
+			fwdInfo: &ForwardingInfo{
+				NextHop:         chanID,
+				AmountToForward: 80,
+				OutgoingCTLV:    10,
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			fwdInfo, err := deriveForwardingInfo(
+				testCase.data, testCase.incomingAmt,
+				testCase.incomingCltv,
+			)
+			require.Equal(t, testCase.err, err)
+			if testCase.err != nil {
+				return
+			}
+
+			require.Equal(t, testCase.fwdInfo, fwdInfo)
+		})
+	}
+}
+
+// mockProcessor is a mocked blinding point processor that just returns the
+// data that it is called with when "decrypting".
+type mockProcessor struct {
+	decrypteErr error
+}
+
+// DecryptBlindedHopData mocks blob decryption, returning the same data that
+// it was called with and an optionally configured error.
+func (m *mockProcessor) DecryptBlindedHopData(_ *btcec.PublicKey,
+	data []byte) ([]byte, error) {
+
+	return data, m.decrypteErr
+}
+
+// TestBlindingKitForwardingInfo tests deriving forwarding info using a
+// blinding kit. This test does not cover assertions on the calculations of
+// forwarding information, because this is covered in a test dedicated to those
+// calculations.
+func TestBlindingKitForwardingInfo(t *testing.T) {
+	t.Parallel()
+
+	// Encode valid blinding data that we'll fake decrypting for our test.
+	scid := lnwire.NewShortChanIDFromInt(1500)
+	blindedData := &record.BlindedRouteData{
+		ShortChannelID: &scid,
+		RelayInfo: &record.PaymentRelayInfo{
+			CltvExpiryDelta: 10,
+			BaseFee:         100,
+			FeeRate:         0,
+		},
+	}
+
+	validData, err := record.EncodeBlindedRouteData(blindedData)
+	require.NoError(t, err)
+
+	// Short channel id is required, set to nil to force a validation
+	// error.
+	blindedData.ShortChannelID = nil
+	invalidData, err := record.EncodeBlindedRouteData(blindedData)
+	require.NoError(t, err)
+
+	// Mocked error.
+	errDecryptFailed := errors.New("could not decrypt")
+
+	tests := []struct {
+		name        string
+		data        []byte
+		amtIncoming lnwire.MilliSatoshi
+		processor   *mockProcessor
+		expectedErr error
+	}{
+		{
+			name: "decryption failed",
+			data: validData,
+			processor: &mockProcessor{
+				decrypteErr: errDecryptFailed,
+			},
+			expectedErr: errDecryptFailed,
+		},
+		{
+			name:        "decode fails",
+			data:        []byte{1, 2, 3},
+			processor:   &mockProcessor{},
+			expectedErr: ErrDecodeFailed,
+		},
+		{
+			name:      "validation fails",
+			data:      invalidData,
+			processor: &mockProcessor{},
+			expectedErr: ErrInvalidPayload{
+				Type:      record.ShortChannelIDType,
+				Violation: OmittedViolation,
+			},
+		},
+		{
+			name:        "valid",
+			data:        validData,
+			processor:   &mockProcessor{},
+			expectedErr: nil,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			// We don't actually use blinding keys due to our
+			// mocking so they can be nil.
+			kit := MakeBlindingKit(
+				testCase.processor, nil, 10000, 150,
+			)
+
+			_, err := kit.ForwardingInfo(nil, testCase.data)
+			require.ErrorIs(t, err, testCase.expectedErr)
 		})
 	}
 }
