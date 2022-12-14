@@ -167,7 +167,7 @@ func NewPayloadFromReader(r io.Reader, blindingKit *blindingKit) (
 	// in accordance with BOLT 04.
 	nextHop := lnwire.NewShortChanIDFromInt(cid)
 	activeBlindingPoint, err := ValidateParsedPayloadTypes(
-		parsedTypes, nextHop, blindingKit,
+		parsedTypes, nextHop, blindingKit, blindingPoint,
 	)
 	if err != nil {
 		return nil, err
@@ -273,7 +273,8 @@ func NewCustomRecords(parsedTypes tlv.TypeMap) record.CustomSet {
 // further payload processing.
 func ValidateParsedPayloadTypes(parsedTypes tlv.TypeMap,
 	nextHop lnwire.ShortChannelID,
-	blindingKit *blindingKit) (*btcec.PublicKey, error) {
+	blindingKit *blindingKit,
+	onionBlinding *btcec.PublicKey) (*btcec.PublicKey, error) {
 
 	// If encrypted data is present in our payload, validate fields for
 	// a blinded route - this validation is different to regular payload
@@ -281,7 +282,9 @@ func ValidateParsedPayloadTypes(parsedTypes tlv.TypeMap,
 	// instead of the onion TLVs.
 	_, dataPresent := parsedTypes[record.EncryptedDataOnionType]
 	if dataPresent {
-		return validateBlindedRouteTypes(parsedTypes, blindingKit)
+		return validateBlindedRouteTypes(
+			parsedTypes, blindingKit, onionBlinding,
+		)
 	}
 
 	isFinalHop := nextHop == Exit
@@ -344,16 +347,17 @@ func ValidateParsedPayloadTypes(parsedTypes tlv.TypeMap,
 // that are part of a blinded route, returning the blinding point that is in
 // use for that payload.
 func validateBlindedRouteTypes(parsedTypes tlv.TypeMap,
-	blindingKit *blindingKit) (*btcec.PublicKey, error) {
+	blindingKit *blindingKit,
+	onionBlinding *btcec.PublicKey) (*btcec.PublicKey, error) {
 
 	if blindingKit == nil {
 		return nil, errors.New("blinding kit required")
 	}
 
 	var (
-		blindingPoint                   *btcec.PublicKey
-		updateAddBlindingSet            = blindingKit.blindingPoint() != nil
-		blindingBytes, onionBlindingSet = parsedTypes[record.BlindingPointOnionType]
+		blindingPoint        *btcec.PublicKey
+		updateAddBlindingSet = blindingKit.blindingPoint() != nil
+		onionBlindingSet     = onionBlinding != nil
 	)
 
 	switch {
@@ -370,11 +374,7 @@ func validateBlindedRouteTypes(parsedTypes tlv.TypeMap,
 		blindingPoint = blindingKit.blindingPoint()
 
 	case onionBlindingSet:
-		var err error
-		blindingPoint, err = btcec.ParsePubKey(blindingBytes)
-		if err != nil {
-			return nil, err
-		}
+		blindingPoint = onionBlinding
 	}
 
 	if _, ok := parsedTypes[record.EncryptedDataOnionType]; !ok {
