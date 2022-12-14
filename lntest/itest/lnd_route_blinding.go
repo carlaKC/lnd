@@ -2,8 +2,10 @@ package itest
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -419,5 +421,22 @@ func testForwardBlindedRoute(net *lntest.NetworkHarness, t *harnessTest) {
 	require.Greater(t.t, len(resp.Routes), 0, "no routes")
 	require.Len(t.t, resp.Routes[0].Hops, 3, "unexpected route length")
 
-	mergeBlindedRoute(t.t, resp.Routes[0].Hops, route.BlindedPath)
+	hops := mergeBlindedRoute(t.t, resp.Routes[0].Hops, route.BlindedPath)
+	preimage := [32]byte{1, 2, 3}
+	hash := sha256.Sum256(preimage[:])
+
+	ctxt, cancel = context.WithTimeout(ctxb, time.Minute)
+	sendResp, err := net.Alice.SendToRouteSync(ctxt, &lnrpc.SendToRouteRequest{
+		PaymentHash: hash[:],
+		Route: &lnrpc.Route{
+			Hops:          hops,
+			TotalFeesMsat: resp.Routes[0].TotalFeesMsat,
+			TotalAmtMsat:  resp.Routes[0].TotalAmtMsat,
+			TotalTimeLock: resp.Routes[0].TotalTimeLock,
+		},
+	})
+	cancel()
+	require.NoError(t.t, err, "send to route")
+
+	require.Equal(t.t, "", sendResp.PaymentError, "send error")
 }
