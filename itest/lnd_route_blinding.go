@@ -1,9 +1,11 @@
 package itest
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -323,6 +325,10 @@ type blindedForwardTest struct {
 	dave     *node.HarnessNode
 	channels []*lnrpc.ChannelPoint
 
+	carolInterceptor routerrpc.Router_HtlcInterceptorClient
+
+	preimage [33]byte
+
 	// cancel will cancel the test's top level context.
 	cancel func()
 }
@@ -333,16 +339,28 @@ func newBlindedForwardTest(ht *lntest.HarnessTest) (context.Context,
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return ctx, &blindedForwardTest{
-		ht:     ht,
-		cancel: cancel,
+		ht:       ht,
+		cancel:   cancel,
+		preimage: [33]byte{1, 2, 3},
 	}
 }
 
 // setup spins up additional nodes needed for our test and creates a four hop
 // network for testing blinded forwarding and returns a blinded route from
-// Bob -> Carol -> Dave, with Bob acting as the introduction point.
-func (b *blindedForwardTest) setup() *routing.BlindedPayment {
-	b.carol = b.ht.NewNode("Carol", nil)
+// Bob -> Carol -> Dave, with Bob acting as the introduction point and an
+// interceptor on Carol's node to manage HTLCs (as Dave does not yet support
+// receiving).
+func (b *blindedForwardTest) setup(
+	ctx context.Context) *routing.BlindedPayment {
+
+	b.carol = b.ht.NewNode("Carol", []string{
+		"requireinterceptor",
+	})
+
+	var err error
+	b.carolInterceptor, err = b.carol.RPC.Router.HtlcInterceptor(ctx)
+	require.NoError(b.ht, err, "interceptor")
+
 	b.dave = b.ht.NewNode("Dave", nil)
 
 	b.channels = setupFourHopNetwork(b.ht, b.carol, b.dave)
@@ -429,6 +447,77 @@ func (b *blindedForwardTest) createRouteToBlinded(paymentAmt int64,
 	require.Len(b.ht, resp.Routes[0].Hops, 3, "unexpected route length")
 
 	return resp.Routes[0]
+}
+
+// sendBlindedPayment dispatches a payment to the route provided. The streaming
+// client for the send is returned with a cancel function that can be used to
+// terminate the stream.
+func (b *blindedForwardTest) sendBlindedPayment(ctx context.Context,
+	route *lnrpc.Route) (lnrpc.Lightning_SendToRouteClient, func()) {
+
+	hash := sha256.Sum256(b.preimage[:])
+
+	ctxt, cancel := context.WithCancel(ctx)
+	sendReq := &lnrpc.SendToRouteRequest{
+		PaymentHash: hash[:],
+		Route:       route,
+	}
+
+	sendClient, err := b.ht.Alice.RPC.LN.SendToRoute(ctxt)
+	require.NoError(b.ht, err, "send to route client")
+
+	err = sendClient.SendMsg(sendReq)
+	require.NoError(b.ht, err, "send to route request")
+
+	return sendClient, cancel
+}
+
+// interceptFinalHop launches a goroutine to intercept Carol's htlcs and
+// returns a closure that can be used to settle intercepted htlcs.
+func (b *blindedForwardTest) interceptFinalHop() func() {
+	hash := sha256.Sum256(b.preimage[:])
+	htlcReceived := make(chan *routerrpc.ForwardHtlcInterceptRequest)
+
+	// Launch a goroutine which will receive from the interceptor and pipe
+	// it into our request channel.
+	go func() {
+		forward, err := b.carolInterceptor.Recv()
+		if err != nil {
+			b.ht.Fatalf("intercept receive failed: %v", err)
+		}
+
+		if !bytes.Equal(forward.PaymentHash, hash[:]) {
+			b.ht.Fatalf("unexpected payment hash: %v", hash)
+		}
+
+		select {
+		case htlcReceived <- forward:
+
+		case <-time.After(lntest.DefaultTimeout):
+			b.ht.Fatal("timeout waiting to send intercepted htlc")
+		}
+	}()
+
+	// Create a closure that will wait for the intercept request and settle
+	// it with our preimage.
+	settleHTLC := func() {
+		select {
+		case forward := <-htlcReceived:
+			action := routerrpc.ResolveHoldForwardAction_SETTLE
+			resp := &routerrpc.ForwardHtlcInterceptResponse{
+				IncomingCircuitKey: forward.IncomingCircuitKey,
+				Action:             action,
+				Preimage:           b.preimage[:],
+			}
+
+			require.NoError(b.ht, b.carolInterceptor.Send(resp))
+
+		case <-time.After(lntest.DefaultTimeout):
+			b.ht.Fatal("timeout waiting for htlc intercept")
+		}
+	}
+
+	return settleHTLC
 }
 
 // setupFourHopNetwork creates a network with the following topology and
@@ -615,9 +704,37 @@ func getForwardingEdge(ht *lntest.HarnessTest,
 // testForwardBlindedRoute tests lnd's ability to forward payments in a blinded
 // route.
 func testForwardBlindedRoute(ht *lntest.HarnessTest) {
-	_, testCase := newBlindedForwardTest(ht)
+	ctx, testCase := newBlindedForwardTest(ht)
 	defer testCase.cleanup()
 
-	route := testCase.setup()
-	testCase.createRouteToBlinded(100_000, route)
+	route := testCase.setup(ctx)
+	blindedRoute := testCase.createRouteToBlinded(100_000, route)
+
+	// Receiving via blinded routes is not yet supported, so Dave won't be
+	// able to process the payment.
+	//
+	// We have an interceptor at our disposal that will catch htlcs as they
+	// are forwarded (ie, it won't intercept a HTLC that dave is receiving,
+	// since no forwarding occurs). We initiate this interceptor with
+	// Carol, so that we can catch it and settle on the outgoing link to
+	// Dave. Once we hit the outgoing link, we know that we successfully
+	// parsed the htlc, so this is an acceptable compromise.
+	// Assert that our interceptor has exited without an error.
+	settleHTLC := testCase.interceptFinalHop()
+
+	// Once our interceptor is set up, we can send the blinded payment.
+	testCase.sendBlindedPayment(ctx, blindedRoute)
+
+	// Wait for the HTLC to be active on Alice's channel.
+	hash := sha256.Sum256(testCase.preimage[:])
+	ht.AssertOutgoingHTLCActive(ht.Alice, testCase.channels[0], hash[:])
+	ht.AssertOutgoingHTLCActive(ht.Bob, testCase.channels[1], hash[:])
+
+	// Intercept and settle the HTLC.
+	settleHTLC()
+
+	// Assert that the HTLC has settled before test cleanup runs so that
+	// we can cooperatively close all channels.
+	ht.AssertHLTCNotActive(ht.Bob, testCase.channels[1], hash[:])
+	ht.AssertHLTCNotActive(ht.Alice, testCase.channels[0], hash[:])
 }
