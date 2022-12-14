@@ -3049,6 +3049,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 
 		fwdInfo := pld.ForwardingInfo()
 
+		// TODO: This should be based on the onion to be spec-compliant?
 		switch fwdInfo.NextHop {
 		case hop.Exit:
 			err := l.processExitHop(
