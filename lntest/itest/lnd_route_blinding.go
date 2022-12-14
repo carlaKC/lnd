@@ -3,6 +3,7 @@ package itest
 import (
 	"context"
 	"encoding/hex"
+	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -11,6 +12,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/record"
 	"github.com/stretchr/testify/require"
 )
 
@@ -289,6 +291,75 @@ func blindedRouteHints(route *BlindedPayment) []*lnrpc.HopHint {
 	return hints
 }
 
+// mergeBlindedRoute route takes a route (including a blinded route) that has been
+// produced by lnd's query routes API and incorporates the elements required
+// for blinded forwarding. Note that the set of hops *is* mutated here.
+func mergeBlindedRoute(t *testing.T, hops []*lnrpc.Hop,
+	blindedPath *sphinx.BlindedPath) []*lnrpc.Hop {
+
+	blindingKey := blindedPath.BlindingPoint.SerializeCompressed()
+	introNode := blindedPath.IntroductionPoint.SerializeCompressed()
+	introNodeStr := hex.EncodeToString(introNode)
+
+	blindingType := uint64(record.BlindingPointOnionType)
+	dataType := uint64(record.EncryptedDataOnionType)
+
+	introData := map[uint64][]byte{
+		blindingType: blindingKey,
+		dataType:     blindedPath.EncryptedData[0],
+	}
+
+	// Build up a map with our blinded hops encrypted data for easy access,
+	// passing over our introduction node because we already have it above.
+	blindedData := make(map[string][]byte, len(blindedPath.EncryptedData)-1)
+	for i := 1; i < len(blindedPath.EncryptedData); i++ {
+		nodeStr := hex.EncodeToString(
+			blindedPath.BlindedHops[i].SerializeCompressed(),
+		)
+		blindedData[nodeStr] = blindedPath.EncryptedData[i]
+	}
+
+	// blindedPortion indicates that we've reached the blinded portion of
+	// the route (ie, we're at or beyond the introduction node).
+	var blindedPortion bool
+	for i, hop := range hops {
+		// The amount to forward in our route provided over api is
+		// _not_ inclusive of fees, which means that when we route,
+		// there won't be enough funds. Here we just add the fees so
+		// that we'll produce a route that forwards enough funds.
+		hops[i].AmtToForwardMsat = hops[i].AmtToForwardMsat + hops[i].FeeMsat
+		hops[i].AmtToForward = hops[i].AmtToForward + hops[i].Fee
+
+		if hop.PubKey == introNodeStr {
+			blindedPortion = true
+
+			hops[i].CustomRecords = introData
+			continue
+		}
+
+		// If we haven't yet reached the blinded portion of our path,
+		// there's nothing to do.
+		if !blindedPortion {
+			continue
+		}
+
+		data, ok := blindedData[hop.PubKey]
+		require.True(t, ok, "node: %v does not have blinded data",
+			hop.PubKey)
+
+		hops[i].CustomRecords = map[uint64][]byte{
+			dataType: data,
+		}
+
+		// If we're just in the blinded path, clear out the
+		// forwarding information.
+		hops[i].AmtToForwardMsat = 0
+		hops[i].Expiry = 0
+	}
+
+	return hops
+}
+
 // testForwardBlindedRoute tests lnd's ability to forward payments in a blinded
 // route.
 func testForwardBlindedRoute(net *lntest.NetworkHarness, t *harnessTest) {
@@ -347,4 +418,6 @@ func testForwardBlindedRoute(net *lntest.NetworkHarness, t *harnessTest) {
 	require.NoError(t.t, err, "query routes")
 	require.Greater(t.t, len(resp.Routes), 0, "no routes")
 	require.Len(t.t, resp.Routes[0].Hops, 3, "unexpected route length")
+
+	mergeBlindedRoute(t.t, resp.Routes[0].Hops, route.BlindedPath)
 }
