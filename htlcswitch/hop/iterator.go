@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	sphinx "github.com/lightningnetwork/lightning-onion"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/record"
 )
 
 // Iterator is an interface that abstracts away the routing information
@@ -111,6 +112,108 @@ func (r *sphinxHopIterator) ExtractErrorEncrypter(
 	extracter ErrorEncrypterExtracter) (ErrorEncrypter, lnwire.FailCode) {
 
 	return extracter(r.ogPacket.EphemeralKey)
+}
+
+// BlindingProcessor is an interface that provides the cryptographic operations
+// required for processing blinded hops.
+type BlindingProcessor interface {
+	// DecryptBlindedHopData decrypts a blinded blob of data using the
+	// ephemeral key provided.
+	DecryptBlindedHopData(ephemPub *btcec.PublicKey,
+		encryptedData []byte) ([]byte, error)
+}
+
+// BlindingKit contains the components required to extract forwarding
+// information for hops in a blinded route.
+type BlindingKit struct {
+	// BlindingPoint holds a blinding point that was passed to the node via
+	// update_add_htlc's TLVs.
+	BlindingPoint *btcec.PublicKey
+
+	// ForwardingInfo uses the ephemeral blinding key provided to decrypt
+	// a blob of encrypted data provided in the onion and obtain the
+	// forwarding information for the blinded hop.
+	ForwardingInfo func(*btcec.PublicKey, []byte) (*ForwardingInfo,
+		error)
+}
+
+// MakeBlindingKit produces a kit that is used to decrypte and decode
+// forwarding information for hops in blinded routes.
+func MakeBlindingKit(processor BlindingProcessor,
+	blindingPoint *btcec.PublicKey, incomingAmount lnwire.MilliSatoshi,
+	incomingCltv uint32) *BlindingKit {
+
+	return &BlindingKit{
+		BlindingPoint: blindingPoint,
+		ForwardingInfo: func(blinding *btcec.PublicKey,
+			data []byte) (*ForwardingInfo, error) {
+
+			decrypted, err := processor.DecryptBlindedHopData(
+				blinding, data,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("decrypt blinded "+
+					"data: %w", err)
+			}
+
+			b := bytes.NewBuffer(decrypted)
+			routeData, err := record.DecodeBlindedRouteData(b)
+			if err != nil {
+				return nil, fmt.Errorf("decode route data: "+
+					"%w", err)
+			}
+
+			if err := ValidateBlindedRouteData(
+				routeData, incomingAmount, incomingCltv,
+			); err != nil {
+				return nil, err
+			}
+
+			return deriveForwardingInfo(
+				routeData, incomingAmount, incomingCltv,
+			)
+		},
+	}
+}
+
+// deriveForwardingInfo calculates forwarding information from the (valid)
+// blinded route data provided and the incoming htlc's information.
+func deriveForwardingInfo(data *record.BlindedRouteData,
+	incomingAmt lnwire.MilliSatoshi, incomingCltv uint32) (*ForwardingInfo,
+	error) {
+
+	// If we have our short channel ID or expiry present, set values in
+	// our forwarding information. We start with the incoming values as
+	// defaults so that they will have the correct values for the final
+	// hop in the blinded route (which does not have relay info set).
+	var (
+		nextHop = Exit
+		expiry  = incomingCltv
+		fwdAmt  = incomingAmt
+	)
+
+	if data.ShortChannelID != nil {
+		nextHop = *data.ShortChannelID
+	}
+
+	if data.RelayInfo != nil {
+		var err error
+		fwdAmt, err = calculateForwardingAmount(
+			incomingAmt, data.RelayInfo.BaseFee,
+			data.RelayInfo.FeeRate,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		expiry = incomingCltv - uint32(data.RelayInfo.CltvExpiryDelta)
+	}
+
+	return &ForwardingInfo{
+		NextHop:         nextHop,
+		AmountToForward: fwdAmt,
+		OutgoingCTLV:    expiry,
+	}, nil
 }
 
 // calculateForwardingAmount calculates the amount to forward for a blinded

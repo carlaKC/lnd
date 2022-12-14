@@ -152,3 +152,60 @@ func TestForwardingAmountCalc(t *testing.T) {
 		})
 	}
 }
+
+// TestDeriveForwarding tests deriving forwarding information from blinded
+// route data.
+func TestDeriveForwarding(t *testing.T) {
+	t.Parallel()
+
+	chanID := lnwire.NewShortChanIDFromInt(1)
+	tests := []struct {
+		name         string
+		incomingAmt  lnwire.MilliSatoshi
+		incomingCltv uint32
+		data         *record.BlindedRouteData
+		fwdInfo      *ForwardingInfo
+	}{
+		{
+			name:         "no next hop",
+			incomingAmt:  100,
+			incomingCltv: 50,
+			data:         &record.BlindedRouteData{},
+			fwdInfo: &ForwardingInfo{
+				NextHop:         Exit,
+				AmountToForward: 100,
+				OutgoingCTLV:    50,
+			},
+		},
+		{
+			name:         "relay info provided",
+			incomingAmt:  100,
+			incomingCltv: 50,
+			data: &record.BlindedRouteData{
+				ShortChannelID: &chanID,
+				RelayInfo: &record.PaymentRelayInfo{
+					CltvExpiryDelta: 40,
+					BaseFee:         20,
+				},
+			},
+			fwdInfo: &ForwardingInfo{
+				NextHop:         chanID,
+				AmountToForward: 80,
+				OutgoingCTLV:    10,
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			fwdInfo, err := deriveForwardingInfo(
+				testCase.data, testCase.incomingAmt,
+				testCase.incomingCltv,
+			)
+			require.NoError(t, err)
+			require.Equal(t, testCase.fwdInfo, fwdInfo)
+		})
+	}
+}
