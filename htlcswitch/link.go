@@ -1814,6 +1814,11 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			failure = &lnwire.FailInvalidOnionKey{
 				OnionSHA256: msg.ShaOnionBlob,
 			}
+
+		// TODO - figure out error handling here!
+		case lnwire.CodeBadOnion:
+			failure = &lnwire.FailBadOnionBlinding{}
+
 		default:
 			l.log.Warnf("unexpected failure code received in "+
 				"UpdateFailMailformedHTLC: %v", msg.FailureCode)
