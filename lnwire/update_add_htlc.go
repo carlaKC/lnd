@@ -3,6 +3,8 @@ package lnwire
 import (
 	"bytes"
 	"io"
+
+	"github.com/lightningnetwork/lnd/tlv"
 )
 
 // OnionPacketSize is the size of the serialized Sphinx onion packet included
@@ -126,7 +128,14 @@ func (c *UpdateAddHTLC) Encode(w *bytes.Buffer, pver uint32) error {
 		return err
 	}
 
-	err := EncodeMessageExtraData(&c.ExtraData, &c.BlindingPoint)
+	var records []tlv.RecordProducer
+	if c.BlindingPoint.PublicKey != nil {
+		records = []tlv.RecordProducer{
+			&c.BlindingPoint,
+		}
+	}
+
+	err := EncodeMessageExtraData(&c.ExtraData, records...)
 	if err != nil {
 		return err
 	}
