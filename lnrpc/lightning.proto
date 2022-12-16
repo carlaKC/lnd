@@ -2891,6 +2891,10 @@ message QueryRoutesRequest {
     */
     repeated lnrpc.RouteHint route_hints = 16;
 
+    // An optional blinded path to reach the destination. Note that the
+    // introduction node must be provided as the first hop in the route.
+    BlindedPayment blinded_path = 19;
+
     /*
     Features assumed to be supported by the final node. All transitive feature
     dependencies must also be set properly. For a given feature bit pair, either
@@ -3355,6 +3359,62 @@ message RouteHint {
     specific destination.
     */
     repeated HopHint hop_hints = 1;
+}
+
+message BlindedPayment {
+    // The blinded route to send the payment to.
+    BlindedRoute route = 1;
+
+    // The relay parameters for the blinded route.
+    BlindedRelay relay_parameters = 2;
+
+    // The routing constraints for the blinded route.
+    BlindedConstraints relay_constraints = 3;
+
+    // The feature bits for the route.
+    repeated FeatureBit features = 4;
+}
+
+message BlindedRelay {
+    // The aggregate base fee for hops in the blinded portion of the route,
+    // expressed in millisatoshis.
+    uint64 aggregate_base_fee_msat = 1;
+
+    // The aggregate proportional fee for hops in the blinded portion of the
+    // route, expressed in micro-satoshis (parts per million).
+    uint64 aggregate_proportional_fee_ppm = 2;
+
+    // The total cltv expiry delta for the blinded portion of the route.
+    uint32 total_cltv_delta = 3;
+}
+
+message BlindedConstraints {
+    // The minimum hltc size for the route.
+    uint64 min_htlc = 1;
+
+    // The cltv limit for the route.
+    uint32 cltv_limit = 2;
+}
+
+message BlindedRoute {
+    // The unblinded pubkey of the introduction node for the route.
+    bytes introduction_node = 1;
+
+    // The ephemeral pubkey used by nodes in the blinded route.
+    bytes blinding_point = 2;
+
+    // A set of blinded node keys and data blobs for the blinded portion of the
+    // route. Note that the first hop is expected to be the introduction node,
+    // so the route is always expected to have at least one hop.
+    repeated BlindedHop blinded_hops = 3;
+}
+
+message BlindedHop {
+    // The blinded public key of the node.
+    bytes blinded_node = 1;
+
+    // An encrypted blob of data provided to the blinded node.
+    bytes encrypted_data = 2;
 }
 
 message AMPInvoiceState {
