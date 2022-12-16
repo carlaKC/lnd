@@ -2841,6 +2841,11 @@ message QueryRoutesRequest {
     */
     repeated lnrpc.RouteHint route_hints = 16;
 
+    // An optional blinded path to reach the destination via. Note that the
+    // introduction node included in this path *must* be the same as the target
+    // pubkey provided, and there must be at least two hops in the path.
+    BlindedPayment blinded_path = 19;
+
     /*
     Features assumed to be supported by the final node. All transitive feature
     dependencies must also be set properly. For a given feature bit pair, either
@@ -3305,6 +3310,54 @@ message RouteHint {
     specific destination.
     */
     repeated HopHint hop_hints = 1;
+}
+
+message BlindedPayment {
+    // The blinded route to send the payment to.
+    BlindedRoute route = 1;
+
+    // The aggregate base fee for hops in the blinded portion of the route,
+    // expressed in millisatoshis.
+    uint64 aggregate_base_fee_msat = 2;
+
+    // The aggregate proportional fee for hops in the blinded portion of the
+    // route, expressed in micro-satoshis (parts per million).
+    uint64 aggregate_proportional_fee_ppm = 3;
+
+    // The total cltv expiry for the blinded portion of the route.
+    uint32 total_cltv_delta = 4;
+
+    // The cltv limit for the route.
+    uint32 cltv_limit = 5;
+
+    // The minimum hltc size for the route.
+    uint64 min_htlc = 6;
+
+    // The maximum hltc size for the route.
+    uint64 max_htlc = 7;
+
+    // The feature bits for the route.
+    repeated FeatureBit features = 8;
+}
+
+message BlindedRoute {
+    // The unblinded pubkey of the introduction node for the route.
+    bytes introduction_node = 1;
+
+    // The ephemeral pubkey used by nodes in the blinded route.
+    bytes blinding_point = 2;
+
+    // A set of blinded node keys and data blobs for the blinded portion of the
+    // route. Note that the first hop is expected to
+    repeated BlindedHop blinded_hops = 3;
+}
+
+message BlindedHop {
+    // The blinded public key of the node.
+    bytes blinded_node = 1;
+
+    // An encrypted blob of data provided to the blinded node.
+    bytes encrypted_data = 2;
 }
 
 message AMPInvoiceState {

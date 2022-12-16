@@ -1375,6 +1375,108 @@
             "format": "byte"
           },
           {
+            "name": "blinded_path.route.introduction_node",
+            "description": "The unblinded pubkey of the introduction node for the route.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "byte"
+          },
+          {
+            "name": "blinded_path.route.blinding_point",
+            "description": "The ephemeral pubkey used by nodes in the blinded route.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "byte"
+          },
+          {
+            "name": "blinded_path.aggregate_base_fee_msat",
+            "description": "The aggregate base fee for hops in the blinded portion of the route,\nexpressed in millisatoshis.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "uint64"
+          },
+          {
+            "name": "blinded_path.aggregate_proportional_fee_ppm",
+            "description": "The aggregate proportional fee for hops in the blinded portion of the\nroute, expressed in micro-satoshis (parts per million).",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "uint64"
+          },
+          {
+            "name": "blinded_path.total_cltv_delta",
+            "description": "The total cltv expiry for the blinded portion of the route.",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int64"
+          },
+          {
+            "name": "blinded_path.cltv_limit",
+            "description": "The cltv limit for the route.",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int64"
+          },
+          {
+            "name": "blinded_path.min_htlc",
+            "description": "The minimum hltc size for the route.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "uint64"
+          },
+          {
+            "name": "blinded_path.max_htlc",
+            "description": "The maximum hltc size for the route.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "uint64"
+          },
+          {
+            "name": "blinded_path.features",
+            "description": "The feature bits for the route.",
+            "in": "query",
+            "required": false,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "DATALOSS_PROTECT_REQ",
+                "DATALOSS_PROTECT_OPT",
+                "INITIAL_ROUING_SYNC",
+                "UPFRONT_SHUTDOWN_SCRIPT_REQ",
+                "UPFRONT_SHUTDOWN_SCRIPT_OPT",
+                "GOSSIP_QUERIES_REQ",
+                "GOSSIP_QUERIES_OPT",
+                "TLV_ONION_REQ",
+                "TLV_ONION_OPT",
+                "EXT_GOSSIP_QUERIES_REQ",
+                "EXT_GOSSIP_QUERIES_OPT",
+                "STATIC_REMOTE_KEY_REQ",
+                "STATIC_REMOTE_KEY_OPT",
+                "PAYMENT_ADDR_REQ",
+                "PAYMENT_ADDR_OPT",
+                "MPP_REQ",
+                "MPP_OPT",
+                "WUMBO_CHANNELS_REQ",
+                "WUMBO_CHANNELS_OPT",
+                "ANCHORS_REQ",
+                "ANCHORS_OPT",
+                "ANCHORS_ZERO_FEE_HTLC_REQ",
+                "ANCHORS_ZERO_FEE_HTLC_OPT",
+                "AMP_REQ",
+                "AMP_OPT"
+              ]
+            },
+            "collectionFormat": "multi"
+          },
+          {
             "name": "dest_features",
             "description": "Features assumed to be supported by the final node. All transitive feature\ndependencies must also be set properly. For a given feature bit pair, either\noptional or remote may be set, but not both. If this field is nil or empty,\nthe router will try to load destination features from the graph as a\nfallback.",
             "in": "query",
@@ -1539,6 +1641,10 @@
                     "$ref": "#/definitions/lnrpcRouteHint"
                   },
                   "description": "Optional route hints to reach the destination through private channels."
+                },
+                "blinded_path": {
+                  "$ref": "#/definitions/lnrpcBlindedPayment",
+                  "description": "An optional blinded path to reach the destination via. Note that the\nintroduction node included in this path *must* be the same as the target\npubkey provided, and there must be at least two hops in the path."
                 },
                 "dest_features": {
                   "type": "array",
@@ -3333,6 +3439,89 @@
           "items": {
             "$ref": "#/definitions/lnrpcPendingUpdate"
           }
+        }
+      }
+    },
+    "lnrpcBlindedHop": {
+      "type": "object",
+      "properties": {
+        "blinded_node": {
+          "type": "string",
+          "format": "byte",
+          "description": "The blinded public key of the node."
+        },
+        "encrypted_data": {
+          "type": "string",
+          "format": "byte",
+          "description": "An encrypted blob of data provided to the blinded node."
+        }
+      }
+    },
+    "lnrpcBlindedPayment": {
+      "type": "object",
+      "properties": {
+        "route": {
+          "$ref": "#/definitions/lnrpcBlindedRoute",
+          "description": "The blinded route to send the payment to."
+        },
+        "aggregate_base_fee_msat": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The aggregate base fee for hops in the blinded portion of the route,\nexpressed in millisatoshis."
+        },
+        "aggregate_proportional_fee_ppm": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The aggregate proportional fee for hops in the blinded portion of the\nroute, expressed in micro-satoshis (parts per million)."
+        },
+        "total_cltv_delta": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The total cltv expiry for the blinded portion of the route."
+        },
+        "cltv_limit": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The cltv limit for the route."
+        },
+        "min_htlc": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The minimum hltc size for the route."
+        },
+        "max_htlc": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The maximum hltc size for the route."
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/lnrpcFeatureBit"
+          },
+          "description": "The feature bits for the route."
+        }
+      }
+    },
+    "lnrpcBlindedRoute": {
+      "type": "object",
+      "properties": {
+        "introduction_node": {
+          "type": "string",
+          "format": "byte",
+          "description": "The unblinded pubkey of the introduction node for the route."
+        },
+        "blinding_point": {
+          "type": "string",
+          "format": "byte",
+          "description": "The ephemeral pubkey used by nodes in the blinded route."
+        },
+        "blinded_hops": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/lnrpcBlindedHop"
+          },
+          "title": "A set of blinded node keys and data blobs for the blinded portion of the\nroute. Note that the first hop is expected to"
         }
       }
     },
