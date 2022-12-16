@@ -13,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
+	sphinx "github.com/lightningnetwork/lightning-onion"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/feature"
 	"github.com/lightningnetwork/lnd/htlcswitch"
@@ -180,15 +181,12 @@ func parsePubKey(key string) (route.Vertex, error) {
 	return route.NewVertexFromBytes(pubKeyBytes)
 }
 
+//nolint:funlen
 func (r *RouterBackend) parseQueryRoutesRequest(in *lnrpc.QueryRoutesRequest) (
 	*routing.RouteRequest, error) {
 
-	// Parse the hex-encoded source and target public keys into full public
-	// key objects we can properly manipulate.
-	targetPubKey, err := parsePubKey(in.PubKey)
-	if err != nil {
-		return nil, err
-	}
+	// Parse the hex-encoded source public key into a full public key that
+	// we can properly manipulate.
 
 	var sourcePubKey route.Vertex
 	if in.SourcePubKey != "" {
@@ -258,7 +256,78 @@ func (r *RouterBackend) parseQueryRoutesRequest(in *lnrpc.QueryRoutesRequest) (
 	if sourcePubKey != r.SelfNode {
 		maxTotalTimelock = math.MaxUint32
 	}
-	cltvLimit, err := ValidateCLTVLimit(in.CltvLimit, maxTotalTimelock)
+
+	// If we have a blinded path set, we'll get a few of our fields from
+	// inside of the path rather than the request's fields.
+	var (
+		cltvLimit      = in.CltvLimit
+		targetPubKey   *route.Vertex
+		routeHintEdges map[route.Vertex][]*channeldb.CachedEdgePolicy
+		blindedPmt     *routing.BlindedPayment
+	)
+
+	// If a blinded path is included, validate that values in the
+	if in.BlindedPath != nil { //nolint:nestif
+		if len(in.PubKey) != 0 {
+			return nil, fmt.Errorf("target pubkey: %x should "+
+				"not be set when blinded path is provided",
+				in.PubKey)
+		}
+
+		var (
+			limitSet     = in.CltvLimit != 0
+			blindedLimit uint32
+		)
+
+		if in.BlindedPath.RelayConstraints != nil {
+			blindedLimit = in.BlindedPath.RelayConstraints.CltvLimit
+		}
+
+		if limitSet && in.CltvLimit != blindedLimit {
+			return nil, fmt.Errorf("cltv limit in request: %v "+
+				"different to blinded path: %v", in.CltvLimit,
+				blindedLimit)
+		}
+		cltvLimit = blindedLimit
+
+		if len(in.RouteHints) > 0 {
+			return nil, errors.New("route hints and blinded " +
+				"path can't both be set")
+		}
+
+		blindedPmt, err = unmarshalBlindedPayment(in.BlindedPath)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshal blinded payment: %w",
+				err)
+		}
+
+		if err := blindedPmt.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid blinded path: %w", err)
+		}
+	} else {
+		// If we do not have a blinded path, a target pubkey must be
+		// set.
+		pk, err := parsePubKey(in.PubKey)
+		if err != nil {
+			return nil, err
+		}
+		targetPubKey = &pk
+
+		// Convert route hints to an edge map.
+		routeHints, err := unmarshallRouteHints(in.RouteHints)
+		if err != nil {
+			return nil, err
+		}
+
+		routeHintEdges, err = routing.RouteHintsToEdges(
+			routeHints, *targetPubKey,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	cltvLimit, err = ValidateCLTVLimit(cltvLimit, maxTotalTimelock)
 	if err != nil {
 		return nil, err
 	}
@@ -340,22 +409,118 @@ func (r *RouterBackend) parseQueryRoutesRequest(in *lnrpc.QueryRoutesRequest) (
 		return nil, err
 	}
 
-	// Convert route hints to an edge map.
-	routeHints, err := unmarshallRouteHints(in.RouteHints)
-	if err != nil {
-		return nil, err
+	return routing.NewRouteRequest(
+		sourcePubKey, targetPubKey, amt, in.TimePref, restrictions,
+		customRecords, routeHintEdges, blindedPmt, finalCLTVDelta,
+	), nil
+}
+
+func unmarshalBlindedPayment(rpcPayment *lnrpc.BlindedPayment) (
+	*routing.BlindedPayment, error) {
+
+	if rpcPayment == nil {
+		return nil, errors.New("nil blinded payment")
 	}
-	routeHintEdges, err := routing.RouteHintsToEdges(
-		routeHints, targetPubKey,
-	)
+
+	path, err := unmarshalBlindedPath(rpcPayment.Route)
 	if err != nil {
 		return nil, err
 	}
 
-	return routing.NewRouteRequest(
-		sourcePubKey, &targetPubKey, amt, in.TimePref, restrictions,
-		customRecords, routeHintEdges, nil, finalCLTVDelta,
-	), nil
+	features, err := UnmarshalFeatures(rpcPayment.Features)
+	if err != nil {
+		return nil, err
+	}
+
+	var (
+		relay       = rpcPayment.RelayParameters
+		constraints = rpcPayment.RelayConstraints
+	)
+
+	if relay == nil {
+		return nil, errors.New("relay parameters required")
+	}
+
+	if constraints == nil {
+		return nil, errors.New("constraints required")
+	}
+
+	return &routing.BlindedPayment{
+		BlindedPath: path,
+		RelayInfo: &routing.AggregateRelay{
+			CltvExpiryDelta: uint16(relay.TotalCltvDelta),
+			BaseFee:         uint32(relay.AggregateBaseFeeMsat),
+			FeeRate: uint32(
+				relay.AggregateProportionalFeePpm,
+			),
+		},
+		Constraints: &routing.AggregateConstraints{
+			HtlcMinimumMsat: lnwire.MilliSatoshi(
+				constraints.MinHtlc,
+			),
+			MaxCltvExpiry: constraints.CltvLimit,
+		},
+
+		Features: features,
+	}, nil
+}
+
+func unmarshalBlindedPath(rpcPath *lnrpc.BlindedRoute) (*sphinx.BlindedPath,
+	error) {
+
+	if rpcPath == nil {
+		return nil, errors.New("blinded path required when blinded " +
+			"route is provided")
+	}
+
+	introduction, err := btcec.ParsePubKey(rpcPath.IntroductionNode)
+	if err != nil {
+		return nil, err
+	}
+
+	blinding, err := btcec.ParsePubKey(rpcPath.BlindingPoint)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(rpcPath.BlindedHops) < 1 { //nolint:gomnd
+		return nil, errors.New("at least 1 blinded hops required")
+	}
+
+	path := &sphinx.BlindedPath{
+		IntroductionPoint: introduction,
+		BlindingPoint:     blinding,
+		BlindedHops: make(
+			[]*sphinx.BlindedHopInfo, len(rpcPath.BlindedHops),
+		),
+	}
+
+	for i, hop := range rpcPath.BlindedHops {
+		path.BlindedHops[i], err = unmarshalBlindedHop(hop)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return path, nil
+}
+
+func unmarshalBlindedHop(rpcHop *lnrpc.BlindedHop) (*sphinx.BlindedHopInfo,
+	error) {
+
+	pubkey, err := btcec.ParsePubKey(rpcHop.BlindedNode)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(rpcHop.EncryptedData) == 0 {
+		return nil, errors.New("empty encrypted data not allowed")
+	}
+
+	return &sphinx.BlindedHopInfo{
+		NodePub: pubkey,
+		Payload: rpcHop.EncryptedData,
+	}, nil
 }
 
 // rpcEdgeToPair looks up the provided channel and returns the channel endpoints
