@@ -1548,6 +1548,13 @@
                   },
                   "description": "Optional route hints to reach the destination through private channels."
                 },
+                "blinded_path": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/lnrpcBlindedPayment"
+                  },
+                  "description": "An optional blinded path(s) to reach the destination. Note that the\nintroduction node must be provided as the first hop in the route."
+                },
                 "dest_features": {
                   "type": "array",
                   "items": {
@@ -3342,6 +3349,84 @@
           "items": {
             "$ref": "#/definitions/lnrpcPendingUpdate"
           }
+        }
+      }
+    },
+    "lnrpcBlindedHop": {
+      "type": "object",
+      "properties": {
+        "blinded_node": {
+          "type": "string",
+          "format": "byte",
+          "description": "The blinded public key of the node."
+        },
+        "encrypted_data": {
+          "type": "string",
+          "format": "byte",
+          "description": "An encrypted blob of data provided to the blinded node."
+        }
+      }
+    },
+    "lnrpcBlindedPath": {
+      "type": "object",
+      "properties": {
+        "introduction_node": {
+          "type": "string",
+          "format": "byte",
+          "description": "The unblinded pubkey of the introduction node for the route."
+        },
+        "blinding_point": {
+          "type": "string",
+          "format": "byte",
+          "description": "The ephemeral pubkey used by nodes in the blinded route."
+        },
+        "blinded_hops": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/lnrpcBlindedHop"
+          },
+          "description": "A set of blinded node keys and data blobs for the blinded portion of the\nroute. Note that the first hop is expected to be the introduction node,\nso the route is always expected to have at least one hop."
+        }
+      }
+    },
+    "lnrpcBlindedPayment": {
+      "type": "object",
+      "properties": {
+        "blinded_path": {
+          "$ref": "#/definitions/lnrpcBlindedPath",
+          "description": "The blinded path to send the payment to."
+        },
+        "base_fee_msat": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The base fee for the blinded path provided, expressed in msat."
+        },
+        "proportional_fee_msat": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The proportional fee for the blinded path provided, expressed in msat."
+        },
+        "total_cltv_delta": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The total CLTV delta for the blinded path provided, *not* including the\nfinal CLTV delta for the receiving node."
+        },
+        "htlc_min_msat": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The minimum hltc size that may be sent over the blinded path, expressed\nin msat."
+        },
+        "htlc_max_msat": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The maximum htlc size that may be sent over the blinded path, expressed\nin msat."
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/lnrpcFeatureBit"
+          },
+          "description": "The feature bits for the route."
         }
       }
     },
