@@ -420,6 +420,12 @@ func (r *RouterBackend) MarshallRoute(route *route.Route) (*lnrpc.Route, error) 
 			TlvPayload:    !hop.LegacyPayload,
 			MppRecord:     mpp,
 			Metadata:      hop.Metadata,
+			EncryptedData: hop.EncryptedData,
+		}
+
+		if hop.BlindingPoint != nil {
+			blinding := hop.BlindingPoint.SerializeCompressed()
+			resp.Hops[i].BlindingPoint = blinding
 		}
 		incomingAmt = hop.AmtToForward
 	}

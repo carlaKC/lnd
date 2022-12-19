@@ -2952,6 +2952,16 @@ message Hop {
 
     // The payment metadata to send along with the payment to the payee.
     bytes metadata = 13;
+
+    // Blinding point is an optional blinding point included for introduction
+    // nodes in blinded paths.
+    bytes blinding_point = 14;
+
+    // Encrypted data is a receiver-produced blob of data that provides hops
+    // in a blinded route with forwarding data. As this data is encrypted by
+    // the recipient, we will not be able to parse it - it is essentially an
+    // arbitrary blob of data from our node's perspective.
+    bytes encrypted_data = 15;
 }
 
 message MPPRecord {
