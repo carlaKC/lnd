@@ -21,6 +21,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	sphinx "github.com/lightningnetwork/lightning-onion"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/htlcswitch"
 	"github.com/lightningnetwork/lnd/kvdb"
@@ -958,7 +959,7 @@ func runFindLowestFeePath(t *testing.T, useCache bool) {
 			amt:       paymentAmt,
 			cltvDelta: finalHopCLTV,
 			records:   nil,
-		},
+		}, nil,
 	)
 	require.NoError(t, err, "unable to create path")
 
@@ -1100,7 +1101,7 @@ func testBasicGraphPathFindingCase(t *testing.T, graphInstance *testGraphInstanc
 			amt:       paymentAmt,
 			cltvDelta: finalHopCLTV,
 			records:   nil,
-		},
+		}, nil,
 	)
 	require.NoError(t, err, "unable to create path")
 
@@ -1638,7 +1639,7 @@ func TestNewRoute(t *testing.T) {
 					records:     nil,
 					paymentAddr: testCase.paymentAddr,
 					metadata:    testCase.metadata,
-				},
+				}, nil,
 			)
 
 			if testCase.expectError {
@@ -2642,7 +2643,7 @@ func testCltvLimit(t *testing.T, useCache bool, limit uint32,
 			amt:       paymentAmt,
 			cltvDelta: finalHopCLTV,
 			records:   nil,
-		},
+		}, nil,
 	)
 	require.NoError(t, err, "unable to create path")
 
@@ -2965,7 +2966,7 @@ func runNoCycle(t *testing.T, useCache bool) {
 			amt:       paymentAmt,
 			cltvDelta: finalHopCLTV,
 			records:   nil,
-		},
+		}, nil,
 	)
 	require.NoError(t, err, "unable to create path")
 
@@ -3129,4 +3130,225 @@ func dbFindPath(graph *channeldb.ChannelGraph,
 	)
 
 	return route, err
+}
+
+// TestBlindedRouteConstruction tests creation of a blinded route with the
+// following topology:
+//
+// A -- B -- C (introduction point) - D (blinded) - E (blinded).
+func TestBlindedRouteConstruction(t *testing.T) {
+	t.Parallel()
+
+	var (
+		// We need valid pubkeys for the blinded portion of our route,
+		// so we just produce all of our pubkeys in the same way.
+		_, alicePk       = btcec.PrivKeyFromBytes([]byte{1})
+		_, bobPk         = btcec.PrivKeyFromBytes([]byte{2})
+		_, carolPk       = btcec.PrivKeyFromBytes([]byte{3})
+		_, daveBlindedPk = btcec.PrivKeyFromBytes([]byte{4})
+		_, eveBlindedPk  = btcec.PrivKeyFromBytes([]byte{5})
+
+		_, blindingPk = btcec.PrivKeyFromBytes([]byte{9})
+
+		// Convenient type conversions for the pieces of code that use
+		// vertexes.
+		sourceVertex      = route.NewVertex(alicePk)
+		bobVertex         = route.NewVertex(bobPk)
+		carolVertex       = route.NewVertex(carolPk)
+		daveBlindedVertex = route.NewVertex(daveBlindedPk)
+		eveBlindedVertex  = route.NewVertex(eveBlindedPk)
+
+		currentHeight uint32 = 100
+
+		// Create arbitrary metadata for each hop (we don't need to
+		// actually read this data to test route construction, since
+		// it's only used by forwarding nodes).
+		metadata           = []byte{1, 2, 3}
+		carolEncryptedData = []byte{4, 5, 6}
+		daveEncryptedData  = []byte{7, 8, 9}
+		eveEncryptedData   = []byte{10, 11, 12}
+
+		// Create a blinded route with carol as the introduction point.
+		blindedPath = &sphinx.BlindedPath{
+			IntroductionPoint: carolPk,
+			BlindingPoint:     blindingPk,
+			BlindedHops: []*sphinx.BlindedHopInfo{
+				{
+					// Note: no pubkey is provided for
+					// Carol because we use the pubkey
+					// given by IntroductionPoint.
+					Payload: carolEncryptedData,
+				},
+				{
+					NodePub: daveBlindedPk,
+					Payload: daveEncryptedData,
+				},
+				{
+					NodePub: eveBlindedPk,
+					Payload: eveEncryptedData,
+				},
+			},
+		}
+
+		// Create a blinded payment, which contains the aggregate relay
+		// information and constraints for the blinded portion of the
+		// path.
+		blindedPayment = &BlindedPayment{
+			BlindedPath:     blindedPath,
+			CltvExpiryDelta: 40,
+			// Set only a base fee for easier calculations.
+			BaseFee:  5000,
+			Features: tlvFeatures,
+		}
+
+		// Create channel edges for the unblinded portion of our
+		// route. Proportional fees are omitted for easy test
+		// calculations, but non-zero base fees ensure our fee is
+		// still accounted for. Feature vectors are left empty because
+		// we don't need them for intermediate nodes.
+		aliceBobEdge = &channeldb.CachedEdgePolicy{
+			ChannelID: 1,
+			// We won't actually use this timelock / fee (since
+			// it's the sender's outbound channel), but we include
+			// it with different values so that the test will trip
+			// up if we were to include the fee/delay.
+			TimeLockDelta: 10,
+			FeeBaseMSat:   50,
+			ToNodePubKey: func() route.Vertex {
+				return bobVertex
+			},
+			ToNodeFeatures: tlvFeatures,
+		}
+
+		bobCarolEdge = &channeldb.CachedEdgePolicy{
+			ChannelID:     2,
+			TimeLockDelta: 15,
+			FeeBaseMSat:   20,
+			ToNodePubKey: func() route.Vertex {
+				return carolVertex
+			},
+			ToNodeFeatures: tlvFeatures,
+		}
+
+		// Create final hop parameters for paymeent amount = 110, using
+		// the cltv delta = 50 provided in our blinded payment params.
+		totalAmt       lnwire.MilliSatoshi = 110
+		finalCLtvDelta uint16              = 25
+
+		finalHopParams = finalHopParams{
+			amt:       totalAmt,
+			totalAmt:  totalAmt,
+			cltvDelta: finalCLtvDelta,
+			metadata:  metadata,
+		}
+	)
+
+	require.NoError(t, blindedPayment.Validate())
+
+	// Generate route hints from our blinded payment and a set of edges
+	// that make up the graph we'll give to route construction. The hints
+	// map is keyed by source node, so we can retrieve our blinded edges
+	// accordingly.
+	blindedEdges := blindedPayment.toRouteHints()
+	carolDaveEdge := blindedEdges[carolVertex][0]
+	daveEveEdge := blindedEdges[daveBlindedVertex][0]
+
+	edges := []*channeldb.CachedEdgePolicy{
+		aliceBobEdge,
+		bobCarolEdge,
+		carolDaveEdge,
+		daveEveEdge,
+	}
+
+	// Total timelock for the route should include:
+	// - Starting block height
+	// - CLTV delta for Bob -> Carol (unblinded hop)
+	// - CLTV delta for Carol -> Dave -> Eve (blinded route)
+	// - Final CLTV delta for eve
+	totalTimelock := currentHeight +
+		uint32(bobCarolEdge.TimeLockDelta) +
+		uint32(blindedPayment.CltvExpiryDelta) +
+		uint32(finalCLtvDelta)
+
+	// Total amount for the route should include:
+	// - Total amount being sent
+	// - Fee for Bob -> Carol (unblinded hop)
+	// - Fee for Carol -> Dave -> Eve (blinded route)
+	totalAmount := totalAmt + bobCarolEdge.FeeBaseMSat +
+		lnwire.MilliSatoshi(blindedPayment.BaseFee)
+
+	// Bob's outgoing timelock and amount are the total less his own
+	// outgoing channel's delta and fee.
+	bobTimelock := currentHeight +
+		uint32(blindedPayment.CltvExpiryDelta) +
+		uint32(finalCLtvDelta)
+
+	bobAmount := totalAmt + lnwire.MilliSatoshi(
+		blindedPayment.BaseFee,
+	)
+
+	aliceBobRouteHop := &route.Hop{
+		PubKeyBytes: bobVertex,
+		ChannelID:   aliceBobEdge.ChannelID,
+		// Alice -> Bob is a regular hop, so it should include all the
+		// regular forwarding values for Bob to send an outgoing HTLC
+		// to Carol.
+		OutgoingTimeLock: bobTimelock,
+		AmtToForward:     bobAmount,
+	}
+
+	bobCarolRouteHop := &route.Hop{
+		PubKeyBytes: carolVertex,
+		ChannelID:   bobCarolEdge.ChannelID,
+		// Bob -> Carol sends the HTLC to the introduction node, so
+		// it should not have forwarding values for Carol (these will
+		// be obtained from the encrypted data) and should include both
+		// the blinding point and encrypted data to be passed to Carol.
+		OutgoingTimeLock: 0,
+		AmtToForward:     0,
+		BlindingPoint:    blindingPk,
+		EncryptedData:    carolEncryptedData,
+	}
+
+	carolDaveRouteHop := &route.Hop{
+		PubKeyBytes: daveBlindedVertex,
+		// Carol -> Dave is within the blinded route, so should not
+		// set any outgoing values but must include Dave's encrypted
+		// data.
+		OutgoingTimeLock: 0,
+		AmtToForward:     0,
+		EncryptedData:    daveEncryptedData,
+	}
+
+	daveEveRouteHop := &route.Hop{
+		PubKeyBytes: eveBlindedVertex,
+		// Dave -> Eve is the final hop in a blinded route, so it
+		// should include outgoing values for the final value, along
+		// with any encrypted data for Eve.
+		OutgoingTimeLock: currentHeight + uint32(finalCLtvDelta),
+		AmtToForward:     totalAmt,
+		EncryptedData:    eveEncryptedData,
+		// The last hop should also contain final-hop fields such as
+		// metadata.
+		Metadata: metadata,
+	}
+
+	expectedRoute := &route.Route{
+		SourcePubKey: sourceVertex,
+		Hops: []*route.Hop{
+			aliceBobRouteHop,
+			bobCarolRouteHop,
+			carolDaveRouteHop,
+			daveEveRouteHop,
+		},
+		TotalTimeLock: totalTimelock,
+		TotalAmount:   totalAmount,
+	}
+
+	route, err := newRoute(
+		sourceVertex, edges, currentHeight, finalHopParams,
+		blindedPath,
+	)
+	require.NoError(t, err)
+	require.Equal(t, expectedRoute, route)
 }
