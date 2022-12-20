@@ -183,12 +183,20 @@ func (h *Hop) PackHopPayload(w io.Writer, nextChanID uint64) error {
 	// required routing fields, as well as these optional values.
 	var records []tlv.Record
 
-	// Every hop must have an amount to forward and CLTV expiry.
+	// Hops that are not part of a blinded path will have an amount and
+	// CLTV expiry.
 	amt := uint64(h.AmtToForward)
-	records = append(records,
-		record.NewAmtToFwdRecord(&amt),
-		record.NewLockTimeRecord(&h.OutgoingTimeLock),
-	)
+	if amt != 0 {
+		records = append(
+			records, record.NewAmtToFwdRecord(&amt),
+		)
+	}
+
+	if h.OutgoingTimeLock != 0 {
+		records = append(
+			records, record.NewLockTimeRecord(&h.OutgoingTimeLock),
+		)
+	}
 
 	// BOLT 04 says the next_hop_id should be omitted for the final hop,
 	// but present for all others.
@@ -274,13 +282,18 @@ func (h *Hop) PayloadSize(nextChanID uint64) uint64 {
 	}
 
 	// Add amount size.
-	addRecord(record.AmtOnionType, tlv.SizeTUint64(uint64(h.AmtToForward)))
-
+	if h.AmtToForward != 0 {
+		addRecord(record.AmtOnionType, tlv.SizeTUint64(
+			uint64(h.AmtToForward),
+		))
+	}
 	// Add lock time size.
-	addRecord(
-		record.LockTimeOnionType,
-		tlv.SizeTUint64(uint64(h.OutgoingTimeLock)),
-	)
+	if h.OutgoingTimeLock != 0 {
+		addRecord(
+			record.LockTimeOnionType,
+			tlv.SizeTUint64(uint64(h.OutgoingTimeLock)),
+		)
+	}
 
 	// Add next hop if present.
 	if nextChanID != 0 {
