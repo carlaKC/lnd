@@ -1,6 +1,7 @@
 package routing
 
 import (
+	"bytes"
 	"container/heap"
 	"errors"
 	"fmt"
@@ -108,7 +109,8 @@ type finalHopParams struct {
 // dependencies.
 func newRoute(sourceVertex route.Vertex,
 	pathEdges []*channeldb.CachedEdgePolicy, currentHeight uint32,
-	finalHop finalHopParams) (*route.Route, error) {
+	finalHop finalHopParams, blindedPath *sphinx.BlindedPath) (
+	*route.Route, error) {
 
 	var (
 		hops []*route.Hop
@@ -249,6 +251,47 @@ func newRoute(sourceVertex route.Vertex,
 		// *next* hop, which is the amount this hop needs to forward,
 		// accounting for the fee that it takes.
 		nextIncomingAmount = amtToForward + fee
+	}
+
+	// If we are creating a route to a blinded path, we need to add some
+	// additional data to the route that is required for blinded forwarding.
+	// We do another pass on our edges to append this data.
+	if blindedPath != nil {
+		var (
+			inBlindedRoute bool
+			dataIndex      = 0
+
+			introVertex = route.NewVertex(
+				blindedPath.IntroductionPoint,
+			)
+		)
+
+		for i, hop := range hops {
+			// Once we locate our introduction node, we know that
+			// every hop after this is part of the blinded route.
+			if bytes.Equal(hop.PubKeyBytes[:], introVertex[:]) {
+				inBlindedRoute = true
+				hop.BlindingPoint = blindedPath.BlindingPoint
+			}
+
+			// We don't need to modify edges outside of our blinded
+			// route.
+			if !inBlindedRoute {
+				continue
+			}
+
+			payload := blindedPath.BlindedHops[dataIndex].Payload
+			hop.EncryptedData = payload
+
+			// All of the hops in a blinded route *except* the
+			// final hop should have zero amounts / time locks.
+			if i != len(hops)-1 {
+				hop.AmtToForward = 0
+				hop.OutgoingTimeLock = 0
+			}
+
+			dataIndex++
+		}
 	}
 
 	// With the base routing data expressed as hops, build the full route
