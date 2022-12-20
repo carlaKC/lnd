@@ -21,6 +21,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	sphinx "github.com/lightningnetwork/lightning-onion"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/htlcswitch"
 	"github.com/lightningnetwork/lnd/kvdb"
@@ -958,7 +959,7 @@ func runFindLowestFeePath(t *testing.T, useCache bool) {
 			amt:       paymentAmt,
 			cltvDelta: finalHopCLTV,
 			records:   nil,
-		},
+		}, nil,
 	)
 	require.NoError(t, err, "unable to create path")
 
@@ -1100,7 +1101,7 @@ func testBasicGraphPathFindingCase(t *testing.T, graphInstance *testGraphInstanc
 			amt:       paymentAmt,
 			cltvDelta: finalHopCLTV,
 			records:   nil,
-		},
+		}, nil,
 	)
 	require.NoError(t, err, "unable to create path")
 
@@ -1638,7 +1639,7 @@ func TestNewRoute(t *testing.T) {
 					records:     nil,
 					paymentAddr: testCase.paymentAddr,
 					metadata:    testCase.metadata,
-				},
+				}, nil,
 			)
 
 			if testCase.expectError {
@@ -2642,7 +2643,7 @@ func testCltvLimit(t *testing.T, useCache bool, limit uint32,
 			amt:       paymentAmt,
 			cltvDelta: finalHopCLTV,
 			records:   nil,
-		},
+		}, nil,
 	)
 	require.NoError(t, err, "unable to create path")
 
@@ -2965,7 +2966,7 @@ func runNoCycle(t *testing.T, useCache bool) {
 			amt:       paymentAmt,
 			cltvDelta: finalHopCLTV,
 			records:   nil,
-		},
+		}, nil,
 	)
 	require.NoError(t, err, "unable to create path")
 
@@ -3129,4 +3130,187 @@ func dbFindPath(graph *channeldb.ChannelGraph,
 	)
 
 	return route, err
+}
+
+// TestBlindedRouteConstruction tests creation of a blinded route with the
+// following topology:
+//
+// A -- B -- C (introduction point) - D (blinded) - E (blinded).
+func TestBlindedRouteConstruction(t *testing.T) {
+	t.Parallel()
+
+	var (
+		// We need valid pubkeys for the blinded portion of our route,
+		// so we just produce all of our pubkeys in the same way.
+		_, alicePk = btcec.PrivKeyFromBytes([]byte{1})
+		_, bobPk   = btcec.PrivKeyFromBytes([]byte{2})
+		_, carolPk = btcec.PrivKeyFromBytes([]byte{3})
+		_, davePk  = btcec.PrivKeyFromBytes([]byte{4})
+		_, evePk   = btcec.PrivKeyFromBytes([]byte{5})
+
+		_, blindingPk = btcec.PrivKeyFromBytes([]byte{9})
+
+		sourceVertex         = route.NewVertex(alicePk)
+		currentHeight uint32 = 100
+
+		metadata           = []byte{1, 2, 3}
+		carolEncryptedData = []byte{4, 5, 6}
+		daveEncryptedData  = []byte{7, 8, 9}
+		eveEncryptedData   = []byte{10, 11, 12}
+
+		blindedPath = &sphinx.BlindedPath{
+			IntroductionPoint: carolPk,
+			BlindingPoint:     blindingPk,
+			BlindedHops: []*sphinx.BlindedHopInfo{
+				{
+					// The first payload should contain
+					// carol's blinded pubkey, but we don't
+					// need it here.
+					Payload: carolEncryptedData,
+				},
+				{
+					NodePub: davePk,
+					Payload: daveEncryptedData,
+				},
+				{
+					NodePub: evePk,
+					Payload: eveEncryptedData,
+				},
+			},
+		}
+
+		// Create final hop parameters for amount = 110 and delta = 50.
+		totalAmt   lnwire.MilliSatoshi = 110
+		finalDelta uint16              = 50
+
+		finalHopParams = finalHopParams{
+			amt:         totalAmt,
+			totalAmt:    totalAmt,
+			cltvDelta:   finalDelta,
+			records:     nil,
+			paymentAddr: nil,
+			metadata:    metadata,
+		}
+
+		// Create channel edges for the unblinded portion of our
+		// route. Proportional fees are omitted for easy test
+		// calculations, but non-zero base fees ensure our fee is
+		// still accounted for. Feature vectors are left empty because
+		// we don't need them for intermediate nodes.
+		aliceBobEdge = &channeldb.CachedEdgePolicy{
+			ChannelID: 1,
+			// We won't actually use this timelock / fee (since
+			// it's the sender's outbound channel), but we include
+			// it with different values so that the test will trip
+			// up if we were to include the fee/delay.
+			TimeLockDelta: 10,
+			FeeBaseMSat:   50,
+			ToNodePubKey: func() route.Vertex {
+				return route.NewVertex(bobPk)
+			},
+			ToNodeFeatures: tlvFeatures,
+		}
+
+		bobCarolEdge = &channeldb.CachedEdgePolicy{
+			ChannelID:     2,
+			TimeLockDelta: 15,
+			FeeBaseMSat:   20,
+			ToNodePubKey: func() route.Vertex {
+				return route.NewVertex(carolPk)
+			},
+			ToNodeFeatures: tlvFeatures,
+		}
+
+		// Create edges for the blinded portion of the route with no
+		// fee values, as would be the case when we construct a route
+		// from blinded-route-generated hop hints.
+		carolDaveEdge = &channeldb.CachedEdgePolicy{
+			ToNodePubKey: func() route.Vertex {
+				return route.NewVertex(davePk)
+			},
+			ToNodeFeatures: tlvFeatures,
+		}
+
+		daveEveEdge = &channeldb.CachedEdgePolicy{
+			ToNodePubKey: func() route.Vertex {
+				return route.NewVertex(evePk)
+			},
+			ToNodeFeatures: tlvFeatures,
+		}
+
+		edges = []*channeldb.CachedEdgePolicy{
+			aliceBobEdge,
+			bobCarolEdge,
+			carolDaveEdge,
+			daveEveEdge,
+		}
+
+		// Create the individual hops that we expect in our route.
+		bobHop = &route.Hop{
+			PubKeyBytes:      route.NewVertex(bobPk),
+			ChannelID:        aliceBobEdge.ChannelID,
+			OutgoingTimeLock: 150,
+			AmtToForward:     110,
+		}
+
+		// The introduction node should not have forwarding amount or
+		// expiry, but it should include both her encrypted data and
+		// the blinding point.
+		carolHop = &route.Hop{
+			PubKeyBytes:      route.NewVertex(carolPk),
+			ChannelID:        bobCarolEdge.ChannelID,
+			OutgoingTimeLock: 0,
+			AmtToForward:     0,
+
+			// Carol's payload should have both her encrypted data
+			// and the blinded key for the blinded section of the
+			// route.
+			EncryptedData: carolEncryptedData,
+			BlindingPoint: blindingPk,
+		}
+
+		// Blinded hops should have their encrypted data included, and
+		// the final hop should have our metadata field and amount to
+		// forward / expiry.
+		daveHop = &route.Hop{
+			PubKeyBytes:      route.NewVertex(davePk),
+			OutgoingTimeLock: 0,
+			AmtToForward:     0,
+			EncryptedData:    daveEncryptedData,
+		}
+
+		eveHop = &route.Hop{
+			PubKeyBytes:      route.NewVertex(evePk),
+			OutgoingTimeLock: 150,
+			AmtToForward:     110,
+			EncryptedData:    eveEncryptedData,
+			// Eve's hop should contain fields intended for the
+			// final hop, like metadata.
+			Metadata: metadata,
+		}
+
+		expectedRoute = &route.Route{
+			SourcePubKey: sourceVertex,
+			Hops: []*route.Hop{
+				bobHop,
+				carolHop,
+				daveHop,
+				eveHop,
+			},
+			// Current height = 100
+			// + 50 (blinded portion)
+			// + 15 (Bob / Carol)
+			TotalTimeLock: 165,
+			// Final amount = 110
+			// + 20 (Bob / Carol base fee)
+			TotalAmount: 130,
+		}
+	)
+
+	route, err := newRoute(
+		sourceVertex, edges, currentHeight, finalHopParams,
+		blindedPath,
+	)
+	require.NoError(t, err)
+	require.Equal(t, expectedRoute, route)
 }
