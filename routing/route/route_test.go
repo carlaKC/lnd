@@ -160,6 +160,20 @@ func TestAMPHop(t *testing.T) {
 	}
 }
 
+// TestNoForwardingParams tests packing of a hop payload without and amount or
+// expiry height.
+func TestNoForwardingParams(t *testing.T) {
+	t.Parallel()
+
+	hop := Hop{
+		EncryptedData: []byte{1, 2, 3},
+	}
+
+	var b bytes.Buffer
+	err := hop.PackHopPayload(&b, 2)
+	require.NoError(t, err)
+}
+
 // TestPayloadSize tests the payload size calculation that is provided by Hop
 // structs.
 func TestPayloadSize(t *testing.T) {
@@ -219,6 +233,10 @@ func TestPayloadSize(t *testing.T) {
 			Metadata:      []byte{10, 11},
 			EncryptedData: []byte{12, 13},
 			BlindingPoint: testPubKey,
+		},
+		{
+			PubKeyBytes:   testPubKeyBytes,
+			EncryptedData: []byte{12, 13},
 		},
 	}
 
