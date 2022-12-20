@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/record"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -244,4 +245,44 @@ func TestPayloadSize(t *testing.T) {
 				i, expected, actual)
 		}
 	}
+}
+
+// TestBlindedHopFee tests calculation of hop fees for blinded routes.
+func TestBlindedHopFee(t *testing.T) {
+	t.Parallel()
+
+	route := &Route{
+		TotalAmount: 1500,
+		Hops: []*Hop{
+			// Start with two un-blinded hops.
+			{
+				AmtToForward: 1450,
+			},
+			{
+				AmtToForward: 1300,
+			},
+			{
+				// Our introduction node will have a zero
+				// forward amount.
+				AmtToForward: 0,
+			},
+			{
+				// An intermediate blinded hop will also have
+				// a zero forward amount.
+				AmtToForward: 0,
+			},
+			{
+
+				// Our final blinded hop should have a forward
+				// amount set.
+				AmtToForward: 1000,
+			},
+		},
+	}
+
+	require.Equal(t, lnwire.MilliSatoshi(50), route.HopFee(0))
+	require.Equal(t, lnwire.MilliSatoshi(150), route.HopFee(1))
+	require.Equal(t, lnwire.MilliSatoshi(300), route.HopFee(2))
+	require.Equal(t, lnwire.MilliSatoshi(0), route.HopFee(3))
+	require.Equal(t, lnwire.MilliSatoshi(0), route.HopFee(4))
 }
