@@ -204,7 +204,7 @@ func TestDeriveForwarding(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			fwdInfo, err := deriveForwardingInfo(
 				testCase.data, testCase.incomingAmt,
-				testCase.incomingCltv,
+				testCase.incomingCltv, nil,
 			)
 			require.Equal(t, testCase.err, err)
 			if testCase.err != nil {
