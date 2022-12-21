@@ -121,6 +121,10 @@ type BlindingProcessor interface {
 	// ephemeral key provided.
 	DecryptBlindedHopData(ephemPub *btcec.PublicKey,
 		encryptedData []byte) ([]byte, error)
+
+	// NextEphemeral returns the next hop's ephemeral key, calculated
+	// from the current ephemeral key provided.
+	NextEphemeral(*btcec.PublicKey) (*btcec.PublicKey, error)
 }
 
 // BlindingKit contains the components required to extract forwarding
@@ -169,8 +173,14 @@ func MakeBlindingKit(processor BlindingProcessor,
 				return nil, err
 			}
 
+			nextEph, err := processor.NextEphemeral(blinding)
+			if err != nil {
+				return nil, err
+			}
+
 			return deriveForwardingInfo(
 				routeData, incomingAmount, incomingCltv,
+				nextEph,
 			)
 		},
 	}
@@ -179,8 +189,8 @@ func MakeBlindingKit(processor BlindingProcessor,
 // deriveForwardingInfo calculates forwarding information from the (valid)
 // blinded route data provided and the incoming htlc's information.
 func deriveForwardingInfo(data *record.BlindedRouteData,
-	incomingAmt lnwire.MilliSatoshi, incomingCltv uint32) (*ForwardingInfo,
-	error) {
+	incomingAmt lnwire.MilliSatoshi, incomingCltv uint32,
+	nextEph *btcec.PublicKey) (*ForwardingInfo, error) {
 
 	// If we have our short channel ID or expiry present, set values in
 	// our forwarding information. We start with the incoming values as
@@ -213,6 +223,7 @@ func deriveForwardingInfo(data *record.BlindedRouteData,
 		NextHop:         nextHop,
 		AmountToForward: fwdAmt,
 		OutgoingCTLV:    expiry,
+		NextBlinding:    nextEph,
 	}, nil
 }
 
