@@ -30,6 +30,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/queue"
 	"github.com/lightningnetwork/lnd/ticker"
+	"github.com/lightningnetwork/lnd/tlv"
 )
 
 func init() {
@@ -3335,6 +3336,14 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 					PaymentHash: pd.RHash,
 				}
 
+				if fwdInfo.NextBlinding != nil {
+					addMsg.BlindingPoint = tlv.SomeRecordT(
+						//nolint:lll
+						tlv.NewPrimitiveRecord[lnwire.BlindingPointTlvType](
+							fwdInfo.NextBlinding),
+					)
+				}
+
 				// Finally, we'll encode the onion packet for
 				// the _next_ hop using the hop iterator
 				// decoded for the current hop.
@@ -3380,6 +3389,13 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				PaymentHash: pd.RHash,
 			}
 
+			if fwdInfo.NextBlinding != nil {
+				addMsg.BlindingPoint = tlv.SomeRecordT(
+					//nolint:lll
+					tlv.NewPrimitiveRecord[lnwire.BlindingPointTlvType](
+						fwdInfo.NextBlinding),
+				)
+			}
 			// Finally, we'll encode the onion packet for the
 			// _next_ hop using the hop iterator decoded for the
 			// current hop.
