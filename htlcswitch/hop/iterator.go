@@ -119,6 +119,10 @@ type BlindingProcessor interface {
 	// DecryptBlindedData decrypts a blinded blob of data using the
 	// ephemeral key provided.
 	DecryptBlindedData(*btcec.PublicKey, []byte) ([]byte, error)
+
+	// NextEphemeral returns the next hop's ephemeral key, calculated
+	// from the current ephemeral key provided.
+	NextEphemeral(*btcec.PublicKey) (*btcec.PublicKey, error)
 }
 
 // BlindingKit contains the components required to extract forwarding
@@ -208,11 +212,17 @@ func deriveForwardingInfo(processor BlindingProcessor,
 			)
 		}
 
+		nextEph, err := processor.NextEphemeral(blinding)
+		if err != nil {
+			return nil, err
+		}
+
 		return &ForwardingInfo{
 			Network:         BitcoinNetwork,
 			NextHop:         nextHop,
 			AmountToForward: fwdAmt,
 			OutgoingCTLV:    expiry,
+			NextBlinding:    nextEph,
 		}, nil
 	}
 }
