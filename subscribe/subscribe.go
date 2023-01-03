@@ -2,6 +2,7 @@ package subscribe
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -153,8 +154,11 @@ func (s *Server) Subscribe() (*Client, error) {
 // subscription clients.
 func (s *Server) SendUpdate(update interface{}) error {
 
+	fmt.Printf("CKC SendUpdate called with: %v\n", update)
+
 	select {
 	case s.updates <- update:
+		fmt.Println("CKC SendUpdate - update delivered to updates channel")
 		return nil
 	case <-s.quit:
 		return ErrServerShuttingDown
@@ -200,6 +204,7 @@ func (s *Server) subscriptionHandler() {
 
 		// A new update was received, forward it to all active clients.
 		case upd := <-s.updates:
+			fmt.Printf("CKC subscription handler read value: %v clients\n", len(s.clients))
 			for _, client := range s.clients {
 				select {
 				case client.updates.ChanIn() <- upd:

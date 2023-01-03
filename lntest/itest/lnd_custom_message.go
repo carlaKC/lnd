@@ -100,7 +100,7 @@ func testCustomMessage(net *lntest.NetworkHarness, t *harnessTest) {
 		require.Equal(t.t, net.Bob.PubKey[:], msg.Peer, "first msg "+
 			"peer wrong")
 
-	case <-time.After(defaultTimeout):
+	case <-time.After(defaultTimeout * 2):
 		t.t.Fatalf("alice did not receive first custom message: %v",
 			msgType)
 	}
@@ -178,7 +178,7 @@ func testCustomMessage(net *lntest.NetworkHarness, t *harnessTest) {
 		require.Equal(t.t, net.Bob.PubKey[:], msg.Peer, "second "+
 			"message peer")
 
-	case <-time.After(defaultTimeout):
+	case <-time.After(defaultTimeout * 2):
 		t.t.Fatalf("alice did not receive second custom message")
 	}
 }

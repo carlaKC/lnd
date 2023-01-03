@@ -7899,6 +7899,7 @@ func (r *rpcServer) SendCustomMessage(ctx context.Context, req *lnrpc.SendCustom
 		return nil, err
 	}
 
+	rpcsLog.Infof("CKC SendCustomMessage: %v", req.Type)
 	err = r.server.SendCustomMessage(
 		peer, lnwire.MessageType(req.Type), req.Data,
 	)
@@ -7917,12 +7918,14 @@ func (r *rpcServer) SendCustomMessage(ctx context.Context, req *lnrpc.SendCustom
 func (r *rpcServer) SubscribeCustomMessages(req *lnrpc.SubscribeCustomMessagesRequest,
 	server lnrpc.Lightning_SubscribeCustomMessagesServer) error {
 
+	rpcsLog.Info("CKC SubscribeCustomMessages")
 	client, err := r.server.SubscribeCustomMessages()
 	if err != nil {
 		return err
 	}
 	defer client.Cancel()
 
+	rpcsLog.Info("CKC SubscribeCustomMessages - fully subscribed")
 	for {
 		select {
 		case <-client.Quit():
@@ -7934,6 +7937,7 @@ func (r *rpcServer) SubscribeCustomMessages(req *lnrpc.SubscribeCustomMessagesRe
 		case update := <-client.Updates():
 			customMsg := update.(*CustomMessage)
 
+			rpcsLog.Info("CKC SubscribeCustomMessages - sending an update")
 			err := server.Send(&lnrpc.CustomMessage{
 				Peer: customMsg.Peer[:],
 				Data: customMsg.Msg.Data,

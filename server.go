@@ -4535,6 +4535,8 @@ func (s *server) SendCustomMessage(peerPub [33]byte, msgType lnwire.MessageType,
 	// We'll wait until the peer is active.
 	select {
 	case <-peer.ActiveSignal():
+		srvrLog.Infof("CKC: peer active: %x", peer.PubKey())
+
 	case <-peer.QuitSignal():
 		return fmt.Errorf("peer %x disconnected", peerPub)
 	case <-s.quit:

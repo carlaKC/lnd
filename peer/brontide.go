@@ -2111,7 +2111,10 @@ func (p *Brontide) queueHandler() {
 		// the low priority queue.
 		elem := priorityMsgs.Front()
 		if elem == nil {
+			p.log.Info("CKC: taking message from lazy queue")
 			elem = lazyMsgs.Front()
+		} else {
+			p.log.Info("CKC: taking message from prio queue")
 		}
 
 		if elem != nil {
@@ -2130,23 +2133,32 @@ func (p *Brontide) queueHandler() {
 					lazyMsgs.Remove(elem)
 				}
 			case msg := <-p.outgoingQueue:
+				p.log.Infof("CKC: outgoing queue msg: %v",
+					msg.msg.MsgType())
+
 				if msg.priority {
+					p.log.Info("CKC: outgoing added to prio")
 					priorityMsgs.PushBack(msg)
 				} else {
+					p.log.Info("CKC: outgoing added to lazy")
 					lazyMsgs.PushBack(msg)
 				}
 			case <-p.quit:
 				return
 			}
 		} else {
+			p.log.Info("CKC: no messages to send")
 			// If there weren't any messages to send to the
 			// writeHandler, then we'll accept a new message
 			// into the queue from outside sub-systems.
 			select {
 			case msg := <-p.outgoingQueue:
 				if msg.priority {
+					p.log.Info("CKC: getting prio msg")
 					priorityMsgs.PushBack(msg)
 				} else {
+
+					p.log.Info("CKC: getting lazy msg")
 					lazyMsgs.PushBack(msg)
 				}
 			case <-p.quit:
@@ -2245,8 +2257,11 @@ func (p *Brontide) queueMsgLazy(msg lnwire.Message, errChan chan error) {
 func (p *Brontide) queue(priority bool, msg lnwire.Message,
 	errChan chan error) {
 
+	p.log.Info("CKC queuing message")
 	select {
 	case p.outgoingQueue <- outgoingMsg{priority, msg, errChan}:
+		p.log.Info("CKC message delivered to outgoing queue")
+
 	case <-p.quit:
 		p.log.Tracef("Peer shutting down, could not enqueue msg: %v.",
 			spew.Sdump(msg))
@@ -3284,6 +3299,10 @@ func (p *Brontide) SendMessage(sync bool, msgs ...lnwire.Message) error {
 //
 // NOTE: Part of the lnpeer.Peer interface.
 func (p *Brontide) SendMessageLazy(sync bool, msgs ...lnwire.Message) error {
+	for _, msg := range msgs {
+		p.log.Infof("CKC: SendMesageLazy: %v", msg.MsgType())
+	}
+
 	return p.sendMessage(sync, false, msgs...)
 }
 
@@ -3309,8 +3328,10 @@ func (p *Brontide) sendMessage(sync, priority bool, msgs ...lnwire.Message) erro
 		}
 
 		if priority {
+			p.log.Info("CKC: sendMessage queue priority")
 			p.queueMsg(msg, errChan)
 		} else {
+			p.log.Info("CKC: sendMessage queue lazy")
 			p.queueMsgLazy(msg, errChan)
 		}
 	}
