@@ -40,8 +40,9 @@ func testCustomMessage(net *lntest.NetworkHarness, t *harnessTest) {
 	)
 	require.NoError(t.t, net.RestartNode(net.Alice, nil, nil))
 
-	// First connect alice and bob so that they can exchange messages.
-	net.EnsureConnected(t.t, net.Alice, net.Bob)
+	// Wait for Alice's server to be active after the restart before we
+	// try to subscribe to our message stream.
+	require.NoError(t.t, net.Alice.WaitUntilServerActive())
 
 	// Subscribe Alice to custom messages before we send any, so that we
 	// don't miss any.
@@ -73,6 +74,9 @@ func testCustomMessage(net *lntest.NetworkHarness, t *harnessTest) {
 			}
 		}
 	}()
+
+	// Connect alice and bob so that they can exchange messages.
+	net.EnsureConnected(t.t, net.Alice, net.Bob)
 
 	// Create a custom message that is within our allowed range.
 	msgType := uint32(lnwire.CustomTypeStart + 1)
