@@ -752,6 +752,15 @@ func (p *ChannelPackager) AckAddHtlcs(tx kvdb.RwTx, addRefs ...AddRef) error {
 	if len(addRefs) == 0 {
 		return nil
 	}
+	fmt.Printf("[ChannelPackager.AckAddHtlcs(%s)]: marking ADDs as acknowledged in forwarding package\n",
+		p.source,
+	)
+
+	if len(addRefs) == 1 {
+		fmt.Printf("[ChannelPackager.AckAddHtlcs(%s)]: marking ADDs at height=%d, index=%d as acknowledged in forwarding package\n",
+			p.source, addRefs[0].Height, addRefs[0].Index,
+		)
+	}
 
 	fwdPkgBkt := tx.ReadWriteBucket(fwdPackagesKey)
 	if fwdPkgBkt == nil {

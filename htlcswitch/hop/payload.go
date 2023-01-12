@@ -536,6 +536,9 @@ func getMinRequiredViolation(set tlv.TypeMap) *tlv.Type {
 func ValidateBlindedRouteData(blindedData *record.BlindedRouteData,
 	incomingAmount lnwire.MilliSatoshi, incomingTimelock uint32) error {
 
+	fmt.Printf("payload.go: ValidateBlindedRouteData() - validating blinded_data=%+v!\n",
+		blindedData)
+
 	// Bolt 04 notes that we should enforce payment constraints _if_ they
 	// are present, so we do not fail if not provided.
 	if blindedData.Constraints != nil {
@@ -589,6 +592,8 @@ func ValidateBlindedRouteData(blindedData *record.BlindedRouteData,
 			Violation: OmittedViolation,
 		}
 	}
+
+	fmt.Println("payload.go: ValidateBlindedRouteData() - still validating!")
 
 	// No need to check anything else if features are not provided (bolt 4
 	// indicates that omitted features should be treated like an empty

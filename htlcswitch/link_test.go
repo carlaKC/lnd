@@ -194,8 +194,12 @@ func TestChannelLinkRevThenSig(t *testing.T) {
 	require.NoError(t, err)
 	defer harness.aliceLink.Stop()
 
-	alice := newPersistentLinkHarness(t, harness.aliceSwitch,
-		harness.aliceLink, harness.aliceBatchTicker,
+	// NOTE(11/24/22): I think we could use this to demonstrate
+	// that blind hops are correctly reprocessed (reforwarded) after
+	// a restart. Such a test will serve as reassurance that we put
+	// the blinding point in the appropriate spots.
+	alice := newPersistentLinkHarness(
+		t, harness.aliceSwitch, harness.aliceLink, nil,
 		harness.aliceRestore,
 	)
 
@@ -673,7 +677,6 @@ func TestChannelLinkBlindHopReprocessing2024(t *testing.T) {
 	t.Parallel()
 
 	channels, restoreChannelsFromDb, err := createClusterChannels(
-		// channels, _, err := createClusterChannels(
 		t, btcutil.SatoshiPerBitcoin*3, btcutil.SatoshiPerBitcoin*5,
 	)
 	require.NoError(t, err, "unable to create channel")
@@ -735,6 +738,8 @@ func TestChannelLinkBlindHopReprocessing2024(t *testing.T) {
 	blob, err := generateRoute(hops...)
 	require.NoError(t, err, "unable to serialize onion blob")
 
+	t.Logf("Onion BLOB: %+v", blob)
+
 	// Make a payment attempt.
 	invoice, htlc, pid, err := generatePaymentWithPreimage(
 		amount, htlcAmt, totalTimelock, blob, &preimage, rhash, payAddr,
@@ -785,11 +790,30 @@ func TestChannelLinkBlindHopReprocessing2024(t *testing.T) {
 	n = newThreeHopNetwork(t, channels.aliceToBob, channels.bobToAlice,
 		channels.bobToCarol, channels.carolToBob, testStartingHeight)
 
+	if debug {
+		// Log messages that alice receives from bob.
+		n.aliceServer.intersect(createLogFunc("[alice]<-bob<-carol: ",
+			n.aliceChannelLink.ChanID()))
+
+		// Log messages that bob receives from alice.
+		n.bobServer.intersect(createLogFunc("alice->[bob]->carol: ",
+			n.firstBobChannelLink.ChanID()))
+
+		// Log messages that bob receives from carol.
+		n.bobServer.intersect(createLogFunc("alice<-[bob]<-carol: ",
+			n.secondBobChannelLink.ChanID()))
+
+		// Log messages that carol receives from bob.
+		n.carolServer.intersect(createLogFunc("alice->bob->[carol]",
+			n.carolChannelLink.ChanID()))
+	}
+
 	// NOTE: Restarting the whole test network as we do above wipes the
 	// invoice registry for all nodes. We need to restore Carol's registry
 	// manually after restart so that she is still expecting the payment.
 	err = n.carolServer.registry.AddInvoice(ctx, *invoice, htlc.PaymentHash)
 	require.NoError(t, err, "unable to add invoice in carol registry")
+	time.Sleep(3 * time.Second)
 
 	if err := n.start(); err != nil {
 		t.Fatalf("unable to start three hop network: %v", err)
@@ -3805,6 +3829,8 @@ func TestChannelLinkBandwidthChanReserve(t *testing.T) {
 
 // TestChannelRetransmission tests the ability of the channel links to
 // synchronize theirs states after abrupt disconnect.
+// NOTE(11/24/22): Does whether the HTLC contains a blinding point
+// impacted by this?
 func TestChannelRetransmission(t *testing.T) {
 	t.Parallel()
 
@@ -3938,6 +3964,8 @@ func TestChannelRetransmission(t *testing.T) {
 			},
 		},
 	}
+	// NOTE(11/25/22): Here is a payment which encounters a restart somewhere.
+	// Might this contain concepts useful in trying out our blind hop reprocessing?
 	paymentWithRestart := func(t *testing.T, messages []expectedMessage) {
 		channels, restoreChannelsFromDb, err := createClusterChannels(
 			t, btcutil.SatoshiPerBitcoin*5, btcutil.SatoshiPerBitcoin*5,
@@ -4686,6 +4714,8 @@ func newPersistentLinkHarness(t *testing.T, hSwitch *Switch, link ChannelLink,
 func (h *persistentLinkHarness) restart(restartSwitch, syncStates bool,
 	hodlFlags ...hodl.Flag) {
 
+	fmt.Println("[test setup]: restarting link!")
+
 	// First, remove the link from the switch.
 	h.hSwitch.RemoveLink(h.link.ChanID())
 
@@ -4953,6 +4983,64 @@ func generateHtlcAndInvoice(t *testing.T,
 
 	return htlc, invoice
 }
+
+// // generateHtlcAndInvoice generates a single hop htlc which pays to a
+// // blinded route. The caller can configure either an introduction node,
+// // intermediate node, or final node style hop.
+// //
+// // NOTE: It is the responsibility of the caller to ensure that they
+// // provide an onion and route blinding payload which are together
+// // valid under the requirements in BOLT-04.
+// func generateBlindHtlc(t *testing.T, onionPayload *hop.Payload,
+// 	blindPayload *hop.BlindHopPayload,
+// 	blindingPointTLV bool, id uint64) *lnwire.UpdateAddHTLC {
+
+// 	t.Helper()
+
+// 	htlcAmt := lnwire.NewMSatFromSatoshis(10000)
+// 	htlcExpiry := testStartingHeight + testInvoiceCltvExpiry
+
+// 	var b bytes.Buffer
+// 	hop.PackRouteBlindingPayload(&b, blindPayload)
+// 	hops := []*hop.Payload{
+// 		// hop.NewTLVPayload(fwdInfo, blindPayload),
+// 		{
+// 			FwdInfo:                    onionPayload.FwdInfo,
+// 			RouteBlindingEncryptedData: b.Bytes(),
+// 		},
+// 	}
+// 	blob, err := generateRoute(hops...)
+// 	require.NoError(t, err, "unable to generate route")
+
+// 	// Generate a payment preimage & payment address.
+// 	// Interpret the bytes of the path ID as the preimage.
+// 	// This allows the caller to pick the path_id and ensure
+// 	// our HTLC is crafted with matching payment preimage.
+// 	// preimage := (lntypes.Preimage)(blindPayload.PathID)
+// 	// var preimage lntypes.Preimage
+// 	preimageBytes := blindPayload.PathID[:lntypes.PreimageSize]
+// 	preimage, err := lntypes.MakePreimage(preimageBytes)
+// 	require.NoError(t, err, "unable to interpret path_id as payment preimage")
+
+// 	payAddr, err := generatePaymentAddress()
+// 	require.NoError(t, err, "unable to create payment address")
+
+// 	// Construct UpdateAddHTLC.
+// 	_, htlc, _, err := generatePaymentWithPreimage(
+// 		amount, htlcAmt, uint32(htlcExpiry), blob, &preimage, preimage.Hash(), payAddr,
+// 	)
+// 	require.NoError(t, err, "unable to create payment")
+
+// 	htlc.ID = id
+
+// 	// Set any route blinding point provided by the caller.
+// 	// The caller can use this field to build an htlc fit for
+// 	// either an introduction node or an intermediate node in
+// 	// a blind route.
+// 	htlc.BlindingPoint = lnwire.NewBlindingPoint(ephemeralBlindingPoint)
+
+// 	return htlc
+// }
 
 // TestChannelLinkNoMoreUpdates tests that we won't send a new commitment
 // when there are no new updates to sign.

@@ -344,6 +344,10 @@ func newMockHopIterator(hops ...*hop.Payload) hop.Iterator {
 //
 // Every time this method is called we peel off a layer of the onion
 // and our hop iterator contains one less hop!
+//
+// NOTE(calvin): Carla's branch performs all processing of the route blinding
+// payload behind this function. The caller should NOT be expected to decrypt
+// parse, validate, etc. the payload.
 func (r *mockHopIterator) HopPayload() (*hop.Payload, error) {
 	h := r.hops[0]
 	r.hops = r.hops[1:]

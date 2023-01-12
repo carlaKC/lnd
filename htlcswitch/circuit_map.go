@@ -795,12 +795,17 @@ func (cm *circuitMap) LookupByPaymentHash(hash [32]byte) []*PaymentCircuit {
 func (cm *circuitMap) CommitCircuits(circuits ...*PaymentCircuit) (
 	*CircuitFwdActions, error) {
 
+	fmt.Println("[switch.CommitCiruits]: committing circuits!")
+
 	inKeys := make([]CircuitKey, 0, len(circuits))
 	for _, circuit := range circuits {
 		inKeys = append(inKeys, circuit.Incoming)
 	}
 
 	log.Tracef("Committing fresh circuits: %v", newLogClosure(func() string {
+		return spew.Sdump(inKeys)
+	}))
+	fmt.Printf("Committing fresh circuits: %v", newLogClosure(func() string {
 		return spew.Sdump(inKeys)
 	}))
 
@@ -825,12 +830,14 @@ func (cm *circuitMap) CommitCircuits(circuits ...*PaymentCircuit) (
 	for _, circuit := range circuits {
 		inKey := circuit.InKey()
 		if foundCircuit, ok := cm.pending[inKey]; ok {
+			fmt.Printf("[switch.CommitCiruits]: found circuit=%s in our map!\n", inKey)
 			switch {
 
 			// This circuit has a keystone, it's waiting for a
 			// response from the remote peer on the outgoing link.
 			// Drop it like it's hot, ensure duplicates get caught.
 			case foundCircuit.HasKeystone():
+				fmt.Printf("[switch.CommitCiruits]: circuit=%s has a keystone! which means...\n", inKey)
 				drops = append(drops, circuit)
 
 			// If no keystone is set and the switch has not been
@@ -842,6 +849,7 @@ func (cm *circuitMap) CommitCircuits(circuits ...*PaymentCircuit) (
 			// link from failing a duplicate add while it is still
 			// in the server's memory mailboxes.
 			case !foundCircuit.LoadedFromDisk:
+				fmt.Printf("[switch.CommitCiruits]: circuit=%s has has not been loaded from disk!\n", inKey)
 				drops = append(drops, circuit)
 
 			// Otherwise, the in-mem packet has been lost due to a
@@ -849,6 +857,8 @@ func (cm *circuitMap) CommitCircuits(circuits ...*PaymentCircuit) (
 			// the incoming link. The incoming link should be able
 			// detect and ignore duplicate packets of this type.
 			default:
+				fmt.Printf("[switch.CommitCiruits]: ADD for circuit=%s is being failed!\n", inKey)
+				fmt.Printf("[switch.CommitCiruits]: loaded circuit=%s from disk: %t\n", inKey, foundCircuit.LoadedFromDisk)
 				fails = append(fails, circuit)
 				addFails = append(addFails, circuit)
 			}
@@ -864,6 +874,7 @@ func (cm *circuitMap) CommitCircuits(circuits ...*PaymentCircuit) (
 
 	// If all circuits are dropped or failed, we are done.
 	if len(adds) == 0 {
+		fmt.Println("[switch.CommitCiruits]: no ADDs to commit. all must have been duplicates!")
 		actions.Drops = drops
 		actions.Fails = fails
 		return actions, nil
@@ -906,6 +917,7 @@ func (cm *circuitMap) CommitCircuits(circuits ...*PaymentCircuit) (
 		actions.Adds = adds
 		actions.Drops = drops
 		actions.Fails = fails
+		fmt.Println("[switch.CommitCiruits]: committing circuits succeeded!")
 		return actions, nil
 	}
 
@@ -922,6 +934,7 @@ func (cm *circuitMap) CommitCircuits(circuits ...*PaymentCircuit) (
 	actions.Drops = drops
 	actions.Fails = addFails
 
+	fmt.Println("[switch.CommitCiruits]: failed to commit circuits!")
 	return actions, err
 }
 
@@ -948,7 +961,12 @@ func (cm *circuitMap) OpenCircuits(keystones ...Keystone) error {
 		return nil
 	}
 
+	fmt.Println("[switch.OpenCiruits]: opening circuits!")
+
 	log.Tracef("Opening finalized circuits: %v", newLogClosure(func() string {
+		return spew.Sdump(keystones)
+	}))
+	fmt.Printf("[switch.OpenCiruits]: Opening finalized circuits: %v", newLogClosure(func() string {
 		return spew.Sdump(keystones)
 	}))
 

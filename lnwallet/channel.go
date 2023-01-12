@@ -422,6 +422,28 @@ func PayDescsFromRemoteLogUpdates(chanID lnwire.ShortChannelID, height uint64,
 			pd.OnionBlob = make([]byte, len(wireMsg.OnionBlob))
 			copy(pd.OnionBlob[:], wireMsg.OnionBlob[:])
 
+			// NOTE(11/25/22): This provides indication that we are able to
+			// recover a blinding point from disk after a restart, so ADDs
+			// should be reprocessed with a blinding point. We have given the
+			// blind hop processing duties to the incoming link. What happens
+			// if we are an outgoing link here? Are we restored with our peer's
+			// blinding point? I think we'll be fine because from the perspective
+			// of the outgoing link this is a local ADD, so we will not be calling
+			// processRemoteAdds().
+			if wireMsg.BlindingPoint != nil {
+				fmt.Printf("[PayDescsFromRemoteLogUpdates(%s)]: "+
+					"created payment descriptor for ADD from LogUpdate, blinding_point=%x\n",
+					chanID,
+					wireMsg.BlindingPoint.Pubkey().SerializeCompressed()[:10],
+				)
+			} else {
+				fmt.Printf("[PayDescsFromRemoteLogUpdates(%s)]: "+
+					"created payment descriptor for ADD from LogUpdate, blinding_point=%v\n",
+					chanID,
+					wireMsg.BlindingPoint,
+				)
+			}
+
 		case *lnwire.UpdateFulfillHTLC:
 			pd = PaymentDescriptor{
 				RPreimage:   wireMsg.PaymentPreimage,
@@ -1707,6 +1729,11 @@ func (lc *LightningChannel) localLogUpdateToPayDesc(logUpdate *channeldb.LogUpda
 			EntryType:                Fail,
 			FailReason:               wireMsg.Reason[:],
 			removeCommitHeightRemote: commitHeight,
+			// After a restart, we will restore our update logs from
+			// our on disk state. We need to make sure that any
+			// payment descriptors which had blinding points
+			// retrieve and set them here?
+			BlindingPoint: ogHTLC.BlindingPoint,
 		}, nil
 
 	// HTLC fails due to malformed onion blocks are treated the exact same
@@ -1723,6 +1750,11 @@ func (lc *LightningChannel) localLogUpdateToPayDesc(logUpdate *channeldb.LogUpda
 			FailCode:                 wireMsg.FailureCode,
 			ShaOnionBlob:             wireMsg.ShaOnionBlob,
 			removeCommitHeightRemote: commitHeight,
+			// After a restart, we will restore our update logs from
+			// our on disk state. We need to make sure that any
+			// payment descriptors which had blinding points
+			// retrieve and set them here?
+			BlindingPoint: ogHTLC.BlindingPoint,
 		}, nil
 
 	case *lnwire.UpdateFee:
@@ -1854,6 +1886,13 @@ func (lc *LightningChannel) remoteLogUpdateToPayDesc(logUpdate *channeldb.LogUpd
 func (lc *LightningChannel) restoreCommitState(
 	localCommitState, remoteCommitState *channeldb.ChannelCommitment) error {
 
+	fmt.Printf("[channel.restoreCommitState(%s) - local_key=%x, remote_key=%x]: rebuilding in-memory"+
+		"commit/update log state using the information we have on disk.\n",
+		lc.ShortChanID(),
+		lc.LocalFundingKey.SerializeCompressed()[:10],
+		lc.RemoteFundingKey.SerializeCompressed()[:10],
+	)
+
 	// In order to reconstruct the pkScripts on each of the pending HTLC
 	// outputs (if any) we'll need to regenerate the current revocation for
 	// this current un-revoked state as well as retrieve the current
@@ -1959,6 +1998,11 @@ func (lc *LightningChannel) restoreCommitState(
 	// Finally, with the commitment states restored, we'll now restore the
 	// state logs based on the current local+remote commit, and any pending
 	// remote commit that exists.
+	//
+	// NOTE(11/25/22): The commitment transactions/diff this gets
+	// called with contains the payment descriptors which will be restored
+	// to our update logs. The blinding point must already be set at this point.
+	// Presently it is not set.
 	err = lc.restoreStateLogs(
 		localCommit, remoteCommit, pendingRemoteCommit,
 		pendingRemoteCommitDiff, pendingRemoteKeyChain,
@@ -1981,6 +2025,13 @@ func (lc *LightningChannel) restoreStateLogs(
 	pendingRemoteKeys *CommitmentKeyRing,
 	unsignedAckedUpdates,
 	remoteUnsignedLocalUpdates []channeldb.LogUpdate) error {
+
+	fmt.Printf("[channel.restoreStateLogs(%s) - local_key=%x, remote_key=%x]: "+
+		"rebuilding in-memory update logs.\n",
+		lc.ShortChanID(),
+		lc.LocalFundingKey.SerializeCompressed()[:10],
+		lc.RemoteFundingKey.SerializeCompressed()[:10],
+	)
 
 	// We make a map of incoming HTLCs to the height of the remote
 	// commitment they were first added, and outgoing HTLCs to the height
@@ -3577,6 +3628,12 @@ func (lc *LightningChannel) createCommitDiff(
 	newCommit *commitment, commitSig lnwire.Sig,
 	htlcSigs []lnwire.Sig) (*channeldb.CommitDiff, error) {
 
+	fmt.Printf("[SignNextCommittment --> createCommitDiff(%s) - local_key=%x, remote_key=%x]: signing committment for peer!\n",
+		lc.ShortChanID(),
+		lc.LocalFundingKey.SerializeCompressed()[:10],
+		lc.RemoteFundingKey.SerializeCompressed()[:10],
+	)
+
 	// First, we need to convert the funding outpoint into the ID that's
 	// used on the wire to identify this channel. We'll use this shortly
 	// when recording the exact CommitSig message that we'll be sending
@@ -3639,6 +3696,22 @@ func (lc *LightningChannel) createCommitDiff(
 
 			logUpdates = append(logUpdates, logUpdate)
 
+			// fmt.Printf("[SignNextCommittment --> createCommitDiff(%s) - local_key=%x, remote_key=%x, balance=%d]: "+
+			fmt.Printf("[SignNextCommittment --> createCommitDiff(%s) - local_key=%x, remote_key=%x]: "+
+				// fmt.Printf("[SignNextCommittment --> createCommitDiff(%s) - balance=%v]: "+
+				// fmt.Printf("[SignNextCommittment --> createCommitDiff(%s)]: "+
+				"created LogUpdate for ADD: %+v, (chan_id=%s, amount=%d, expiry=%d)\n",
+				lc.ShortChanID(),
+				lc.LocalFundingKey.SerializeCompressed()[:10],
+				lc.RemoteFundingKey.SerializeCompressed()[:10],
+				// lc.AvailableBalance(),
+				// logUpdate.UpdateMsg,
+				htlc.BlindingPoint,
+				htlc.ChanID.String(),
+				htlc.Amount,
+				htlc.Expiry,
+			)
+
 			// Short circuit here since an add should not have any
 			// of the references gathered in the case of settles,
 			// fails or malformed fails.
@@ -3656,6 +3729,8 @@ func (lc *LightningChannel) createCommitDiff(
 				ChanID: chanID,
 				ID:     pd.ParentIndex,
 				Reason: pd.FailReason,
+				// TODO: do we need blinding point here?
+				// NOTE(11/27/22): might depend on approach to error handling.
 			}
 
 		case MalformedFail:
@@ -3664,6 +3739,8 @@ func (lc *LightningChannel) createCommitDiff(
 				ID:           pd.ParentIndex,
 				ShaOnionBlob: pd.ShaOnionBlob,
 				FailureCode:  pd.FailCode,
+				// TODO: do we need blinding point here?
+				// NOTE(11/27/22): might depend on approach to error handling.
 			}
 
 		case FeeUpdate:
@@ -3781,6 +3858,30 @@ func (lc *LightningChannel) getUnsignedAckedUpdates() []channeldb.LogUpdate {
 			}
 			copy(htlc.OnionBlob[:], pd.OnionBlob)
 			logUpdate.UpdateMsg = htlc
+
+			if htlc.BlindingPoint != nil {
+				fmt.Printf("[getUnsignedAckedUpdates(%s) - local_key=%x, remote_key=%x]: "+
+					"created LogUpdate for ADD, blinding_point=%x, (chan_id=%s, amount=%d, expiry=%d)\n",
+					lc.ShortChanID(),
+					lc.LocalFundingKey.SerializeCompressed()[:10],
+					lc.RemoteFundingKey.SerializeCompressed()[:10],
+					htlc.BlindingPoint.Pubkey().SerializeCompressed()[:10],
+					htlc.ChanID.String(),
+					htlc.Amount,
+					htlc.Expiry,
+				)
+			} else {
+				fmt.Printf("[getUnsignedAckedUpdates(%s) - local_key=%x, remote_key=%x]: "+
+					"created LogUpdate for ADD, blinding_point=%v, (chan_id=%s, amount=%d, expiry=%d)\n",
+					lc.ShortChanID(),
+					lc.LocalFundingKey.SerializeCompressed()[:10],
+					lc.RemoteFundingKey.SerializeCompressed()[:10],
+					htlc.BlindingPoint,
+					htlc.ChanID.String(),
+					htlc.Amount,
+					htlc.Expiry,
+				)
+			}
 
 		case Settle:
 			logUpdate.UpdateMsg = &lnwire.UpdateFulfillHTLC{
@@ -5179,6 +5280,12 @@ func (lc *LightningChannel) ReceiveNewCommitment(commitSigs *CommitSigs) error {
 	lc.Lock()
 	defer lc.Unlock()
 
+	fmt.Printf("[ReceiveNewCommitment(%s) - local_key=%x, remote_key=%x]: got new commitment!\n",
+		lc.ShortChanID(),
+		lc.LocalFundingKey.SerializeCompressed()[:10],
+		lc.RemoteFundingKey.SerializeCompressed()[:10],
+	)
+
 	// Check for empty commit sig. Because of a previously existing bug, it
 	// is possible that we receive an empty commit sig from nodes running an
 	// older version. This is a relaxation of the spec, but it is still
@@ -5650,6 +5757,12 @@ func (lc *LightningChannel) ReceiveRevocation(revMsg *lnwire.RevokeAndAck) (
 	lc.Lock()
 	defer lc.Unlock()
 
+	fmt.Printf("[ReceiveRevocation(%s) - local_key=%x, remote_key=%x]: got revocation!\n",
+		lc.ShortChanID(),
+		lc.LocalFundingKey.SerializeCompressed()[:10],
+		lc.RemoteFundingKey.SerializeCompressed()[:10],
+	)
+
 	// Ensure that the new pre-image can be placed in preimage store.
 	store := lc.channelState.RevocationStore
 	revocation, err := chainhash.NewHash(revMsg.Revocation[:])
@@ -5835,6 +5948,30 @@ func (lc *LightningChannel) ReceiveRevocation(revMsg *lnwire.RevokeAndAck) (
 			copy(htlc.OnionBlob[:], pd.OnionBlob)
 			logUpdate.UpdateMsg = htlc
 			addUpdates = append(addUpdates, logUpdate)
+
+			if htlc.BlindingPoint != nil {
+				fmt.Printf("[ReceiveRevocation(%s) - local_key=%x, remote_key=%x]: "+
+					"created LogUpdate for ADD, blinding_point=%x, (chan_id=%s, amount=%d, expiry=%d)\n",
+					lc.ShortChanID(),
+					lc.LocalFundingKey.SerializeCompressed()[:10],
+					lc.RemoteFundingKey.SerializeCompressed()[:10],
+					htlc.BlindingPoint.Pubkey().SerializeCompressed()[:10],
+					htlc.ChanID.String(),
+					htlc.Amount,
+					htlc.Expiry,
+				)
+			} else {
+				fmt.Printf("[ReceiveRevocation(%s) - local_key=%x, remote_key=%x]: "+
+					"created LogUpdate for ADD, blinding_point=%v, (chan_id=%s, amount=%d, expiry=%d)\n",
+					lc.ShortChanID(),
+					lc.LocalFundingKey.SerializeCompressed()[:10],
+					lc.RemoteFundingKey.SerializeCompressed()[:10],
+					htlc.BlindingPoint,
+					htlc.ChanID.String(),
+					htlc.Amount,
+					htlc.Expiry,
+				)
+			}
 
 		case Settle:
 			logUpdate.UpdateMsg = &lnwire.UpdateFulfillHTLC{
@@ -6229,6 +6366,19 @@ func (lc *LightningChannel) ReceiveHTLC(htlc *lnwire.UpdateAddHTLC) (uint64, err
 			"ID %d", htlc.ID, lc.remoteUpdateLog.htlcCounter)
 	}
 
+	if htlc.BlindingPoint != nil {
+		fmt.Printf("[LightningChannel.ReceiveHTLC(%s) - local_key=%x, remote_key=%x]: receiving htlc with "+
+			"ephemeral route blinding point=%x, (chan_id=%s, amount=%d, expiry=%d)\n",
+			lc.ShortChanID(),
+			lc.LocalFundingKey.SerializeCompressed()[:10],
+			lc.RemoteFundingKey.SerializeCompressed()[:10],
+			htlc.BlindingPoint.Pubkey().SerializeCompressed()[:10],
+			htlc.ChanID.String(),
+			htlc.Amount,
+			htlc.Expiry,
+		)
+	}
+
 	pd := &PaymentDescriptor{
 		EntryType:     Add,
 		RHash:         PaymentHash(htlc.PaymentHash),
@@ -6532,6 +6682,18 @@ func (lc *LightningChannel) ReceiveFailHTLC(htlcIndex uint64, reason []byte,
 		LogIndex:    lc.remoteUpdateLog.logIndex,
 		EntryType:   Fail,
 		FailReason:  reason,
+		// IMPORTANT NOTE(11/17/22):
+		// Where we need the blinding point in channel state machine's
+		// update log depends on how errors are to be processed and
+		// possibly on how HTLC retransmission is handled.
+		//
+		// The LN state machine stores the blinding point
+		// associated with an Add if the ADD was associated
+		// with a blinded route. If that Add is now being
+		// failed, we may want a reference to its ephemeral
+		// blinding point so we can use it to determine which
+		// error will be forwarded back towards the sender.
+		// BlindingPoint: htlc.BlindingPoint,
 	}
 
 	lc.remoteUpdateLog.appendUpdate(pd)

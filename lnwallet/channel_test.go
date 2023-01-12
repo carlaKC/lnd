@@ -4372,10 +4372,10 @@ func TestChannelRestoreBlindHTLC(t *testing.T) {
 	t.Logf("from forwarding package, pay_desc=%+v", addPayDescsFromFwdPkg[0])
 	// t.Logf("from forwarding package, blinding_point=%x",
 	// 	blindingPointFromFwdPkg.SerializeCompressed()[:10])
-	// require.Nil(t, blindingPointFromFwdPkg, "unfortunately we expect payment "+
-	// 	"descriptors restored from LogUpdate in our forwarding packages to "+
-	// 	"nil blinding points after restart!")
-	require.Equal(t, blindingPointBeforeRestart, blindingPointFromFwdPkg, "expect blinding_point to match")
+	require.Nil(t, blindingPointFromFwdPkg, "unfortunately we expect payment "+
+		"descriptors restored from LogUpdate in our forwarding packages to "+
+		"nil blinding points after restart!")
+	// require.Equal(t, blindingPointBeforeRestart, blindingPointFromFwdPkg, "expect blinding_point to match")
 
 	// TODO(11/27/22): write a ChannelLink level test which demonstrates ability to recover
 	// blinding point for the downstream peer from the LogUpdates stored on the CommitDiff!

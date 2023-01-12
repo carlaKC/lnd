@@ -188,6 +188,7 @@ func MakeBlindingKit(processor BlindingProcessor,
 					ErrDecodeFailed, err)
 			}
 
+			fmt.Println("MakeBlindingKit")
 			if err := ValidateBlindedRouteData(
 				routeData, incomingAmount, incomingCltv,
 			); err != nil {
@@ -553,6 +554,9 @@ func (p *OnionProcessor) DecodeHopIterators(id []byte,
 			// failure code for replays, we reuse one of the
 			// failure codes that has BADONION.
 			resp.FailCode = lnwire.CodeInvalidOnionVersion
+			fmt.Printf("unable to process onion packet: %v\n",
+				sphinx.ErrReplayedPacket)
+
 			continue
 		}
 

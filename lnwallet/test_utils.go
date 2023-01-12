@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"io"
 	prand "math/rand"
 	"net"
@@ -520,37 +521,45 @@ func ForceStateTransition(chanA, chanB *LightningChannel) error {
 	if err != nil {
 		return err
 	}
+	fmt.Println("[ForceStateTransition]: alice signed new commitment for bob")
 	err = chanB.ReceiveNewCommitment(aliceNewCommit.CommitSigs)
 	if err != nil {
 		return err
 	}
+	fmt.Println("[ForceStateTransition]: bob received commitment")
 
 	bobRevocation, _, _, err := chanB.RevokeCurrentCommitment()
 	if err != nil {
 		return err
 	}
+	fmt.Println("[ForceStateTransition]: bob revoked his old commitment")
 	bobNewCommit, err := chanB.SignNextCommitment()
 	if err != nil {
 		return err
 	}
+	fmt.Println("[ForceStateTransition]: bob signed new commitment for alice")
 
 	_, _, _, _, err = chanA.ReceiveRevocation(bobRevocation)
 	if err != nil {
 		return err
 	}
+	fmt.Println("[ForceStateTransition]: alice received bob's revocation")
 	err = chanA.ReceiveNewCommitment(bobNewCommit.CommitSigs)
 	if err != nil {
 		return err
 	}
+	fmt.Println("[ForceStateTransition]: alice received commitment")
 
 	aliceRevocation, _, _, err := chanA.RevokeCurrentCommitment()
 	if err != nil {
 		return err
 	}
+	fmt.Println("[ForceStateTransition]: alice revoked her old commitment")
 	_, _, _, _, err = chanB.ReceiveRevocation(aliceRevocation)
 	if err != nil {
 		return err
 	}
+	fmt.Println("[ForceStateTransition]: bob received alice's revocation")
 
 	return nil
 }
