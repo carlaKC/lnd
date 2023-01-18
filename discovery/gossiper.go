@@ -2843,6 +2843,7 @@ func (d *AuthenticatedGossiper) handleChanUpdate(nMsg *networkMsg,
 		FeeBaseMSat:               lnwire.MilliSatoshi(upd.BaseFee),
 		FeeProportionalMillionths: lnwire.MilliSatoshi(upd.FeeRate),
 		ExtraOpaqueData:           upd.ExtraOpaqueData,
+		// TODO - here!
 	}
 
 	if err := d.cfg.Router.UpdateEdge(update, ops...); err != nil {
