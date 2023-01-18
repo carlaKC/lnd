@@ -15,6 +15,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/macaroons"
+	"github.com/lightningnetwork/lnd/zpay32"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -361,6 +362,11 @@ func (s *Server) AddHoldInvoice(ctx context.Context,
 		HodlInvoice:     true,
 		Preimage:        nil,
 		RouteHints:      routeHints,
+		// TODO(carla): use privacy-preserving values that obfuscate
+		// how many hops remaining (+ randomized).
+		UpfrontFeePolicy: &zpay32.UpfrontFeePolicy{
+			BaseFee: 1000, //nolint:gomnd
+		},
 	}
 
 	_, dbInvoice, err := AddInvoice(ctx, addInvoiceCfg, addInvoiceData)
