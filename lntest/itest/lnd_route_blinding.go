@@ -286,6 +286,45 @@ func testQueryBlindedRoutes(ht *lntemp.HarnessTest) {
 	require.NotNil(ht, htlcAttempt.Failure)
 	require.Equal(ht, uint32(2), htlcAttempt.Failure.FailureSourceIndex)
 
+	// Next, we test an edge case where just an introduction node is
+	// included as a "single hop blinded route".
+	introNodeBlinded := &lnrpc.BlindedPayment{
+		Route: &lnrpc.BlindedRoute{
+			IntroductionNode: carol.PubKey[:],
+			BlindingPoint:    blindingBytes,
+			BlindedHops: []*lnrpc.BlindedHop{
+				{
+					// The first hop in the blinded route is
+					// expected to be the introduction node.
+					BlindedNode:   carolBlindedBytes,
+					EncryptedData: encryptedDataCarol,
+				},
+			},
+		},
+
+		RelayParameters: &lnrpc.BlindedRelay{
+			AggregateBaseFeeMsat: 0,
+			TotalCltvDelta:       0,
+		},
+		RelayConstraints: &lnrpc.BlindedConstraints{
+			CltvLimit: cltvLimit,
+		},
+	}
+	req = &lnrpc.QueryRoutesRequest{
+		AmtMsat:        paymentAmt,
+		BlindedPath:    introNodeBlinded,
+		FinalCltvDelta: int32(finalDelta),
+	}
+
+	ctxt, cancel = context.WithTimeout(ctxb, defaultTimeout)
+	resp, err = alice.RPC.LN.QueryRoutes(ctxt, req)
+	cancel()
+	require.NoError(ht, err)
+
+	// Assert that we have one route, and two hops: Alice/Bob and Bob/Carol.
+	require.Len(ht, resp.Routes, 1)
+	require.Len(ht, resp.Routes[0].Hops, 2)
+
 	ht.CloseChannel(alice, chanPointAliceBob)
 	ht.CloseChannel(bob, chanPointBobCarol)
 }
