@@ -2783,6 +2783,17 @@ func (c *OpenChannel) AppendRemoteCommitChain(diff *CommitDiff) error {
 		// prevents the same fails and settles from being retransmitted
 		// after restarts. The actual fail or settle we need to
 		// propagate to the remote party is now in the commit diff.
+		//
+		// NOTE(1/20/23): We don't actually do any internal acknowlegment
+		// to the outgoing link here anymore! Ever since we moved to
+		// pipeline (ie: immediately send without waiting for commitment
+		// tx update) settles/fails, this is often (always?) called with empty
+		// SettleFailReferences. Instead settles/fails are acked in
+		// batches periodically by the Switch. I guess the Settle/Fail
+		// will be resent internally until that batch internal
+		// acknowledgement occurs.
+		// https://github.com/lightningnetwork/lnd/pull/3143#discussion_r304190259
+		fmt.Println("[AppendRemoteCommitChain]: AckSettleFails...")
 		err = c.Packager.AckSettleFails(tx, diff.SettleFailAcks...)
 		if err != nil {
 			return err
@@ -3216,6 +3227,7 @@ func (c *OpenChannel) AckAddHtlcs(addRefs ...AddRef) error {
 func (c *OpenChannel) AckSettleFails(settleFailRefs ...SettleFailRef) error {
 	c.Lock()
 	defer c.Unlock()
+	fmt.Println("[OpenChannel.AckSettleFails]")
 
 	return kvdb.Update(c.Db.backend, func(tx kvdb.RwTx) error {
 		return c.Packager.AckSettleFails(tx, settleFailRefs...)

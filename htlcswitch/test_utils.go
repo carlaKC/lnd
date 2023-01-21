@@ -957,6 +957,7 @@ func newThreeHopNetwork(t testing.TB, aliceChannel, firstBobChannel,
 	hopNetwork := newHopNetwork()
 
 	// Create three peers/servers.
+	// NOTE(calvin): This overwrites our invoice DB!!
 	aliceServer, err := newMockServer(
 		t, "alice", startingHeight, aliceDb, hopNetwork.defaultDelta,
 	)

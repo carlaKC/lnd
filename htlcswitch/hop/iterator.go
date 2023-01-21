@@ -420,6 +420,8 @@ func (p *OnionProcessor) DecodeHopIterators(id []byte,
 		resps     = make([]DecodeHopIteratorResponse, batchSize)
 	)
 
+	fmt.Println("[DecodeHopIterators()]: Decrypting onion packets")
+
 	tx := p.router.BeginTxn(id, batchSize)
 
 	decode := func(seqNum uint16, onionPkt *sphinx.OnionPacket,
@@ -474,6 +476,13 @@ func (p *OnionProcessor) DecodeHopIterators(id []byte,
 	// Execute cpu-heavy onion decoding in parallel.
 	var wg sync.WaitGroup
 	for i := range reqs {
+		fmt.Printf("[DecodeHopIterators()]: Decrypting onion packet for HTLC ADD, "+
+			"amt=%s, cltv=%d, r_hash=%v, blinding_point=%x\n",
+			reqs[i].IncomingAmount.String(),
+			reqs[i].IncomingCltv,
+			reqs[i].RHash,
+			reqs[i].BlindingPoint.SerializeCompressed()[:10],
+		)
 		wg.Add(1)
 		go func(seqNum uint16) {
 			defer wg.Done()

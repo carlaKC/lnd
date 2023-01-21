@@ -777,6 +777,11 @@ func (p *ChannelPackager) AckAddHtlcs(tx kvdb.RwTx, addRefs ...AddRef) error {
 	// Load each height bucket once and remove all acked htlcs at that
 	// height.
 	for height, indexes := range heightDiffs {
+		fmt.Printf("[AckAddHtlcs(%s)]: height diff: %d, %+v!\n",
+			p.source,
+			height,
+			indexes,
+		)
 		err := ackAddHtlcsAtHeight(sourceBkt, height, indexes)
 		if err != nil {
 			return err
@@ -832,6 +837,10 @@ func ackAddHtlcsAtHeight(sourceBkt kvdb.RwBucket, height uint64,
 // the settle/fail, or it becomes otherwise safe to forgo retransmitting the
 // settle/fail after a restart.
 func (p *ChannelPackager) AckSettleFails(tx kvdb.RwTx, settleFailRefs ...SettleFailRef) error {
+	fmt.Printf("[Packager.AckSettleFails(%s)]: settle/fail refs: %+v!\n",
+		p.source,
+		settleFailRefs,
+	)
 	return ackSettleFails(tx, settleFailRefs)
 }
 

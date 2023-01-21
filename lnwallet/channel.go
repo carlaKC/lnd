@@ -1303,6 +1303,15 @@ type LightningChannel struct {
 	localUpdateLog  *updateLog
 	remoteUpdateLog *updateLog
 
+	// LocalFundingKey is the public key under control by the wallet that
+	// was used for the 2-of-2 funding output which created this channel.
+	LocalFundingKey *btcec.PublicKey
+
+	// RemoteFundingKey is the public key for the remote channel counter
+	// party  which used for the 2-of-2 funding output which created this
+	// channel.
+	RemoteFundingKey *btcec.PublicKey
+
 	// log is a channel-specific logging instance.
 	log btclog.Logger
 
@@ -1418,6 +1427,8 @@ func NewLightningChannel(signer input.Signer,
 		localUpdateLog:       localUpdateLog,
 		remoteUpdateLog:      remoteUpdateLog,
 		Capacity:             state.Capacity,
+		LocalFundingKey:      state.LocalChanCfg.MultiSigKey.PubKey,
+		RemoteFundingKey:     state.RemoteChanCfg.MultiSigKey.PubKey,
 		taprootNonceProducer: taprootNonceProducer,
 		log:                  build.NewPrefixLog(logPrefix, walletLog),
 		opts:                 opts,
@@ -3669,9 +3680,21 @@ func (lc *LightningChannel) createCommitDiff(
 		// packets, if they exist.
 		if pd.SourceRef != nil {
 			ackAddRefs = append(ackAddRefs, *pd.SourceRef)
+			fmt.Printf("[SignNextCommittment --> createCommitDiff(%s) - local_key=%x, remote_key=%x]: incoming (this) link fwd pkg add ref: %+v!\n",
+				lc.ShortChanID(),
+				lc.LocalFundingKey.SerializeCompressed()[:10],
+				lc.RemoteFundingKey.SerializeCompressed()[:10],
+				pd.SourceRef,
+			)
 		}
 		if pd.DestRef != nil {
 			settleFailRefs = append(settleFailRefs, *pd.DestRef)
+			fmt.Printf("[SignNextCommittment --> createCommitDiff(%s) - local_key=%x, remote_key=%x]: outgoing link's fwd pkg ref: %+v!\n",
+				lc.ShortChanID(),
+				lc.LocalFundingKey.SerializeCompressed()[:10],
+				lc.RemoteFundingKey.SerializeCompressed()[:10],
+				pd.DestRef,
+			)
 		}
 		if pd.ClosedCircuitKey != nil {
 			closedCircuitKeys = append(closedCircuitKeys,
@@ -4340,6 +4363,20 @@ func (lc *LightningChannel) SignNextCommitment() (*NewCommitState, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// IMPORTANT NOTE: Adds, Settles, and Fails are always (internally?) ack'd
+	// atomically with commitment signing.
+	// NOTE(11/23/22):
+	// - Pay careful attention to what we set up
+	//   to be acknowledged in the construction of the CommitDiff.
+	// - This is where we write the LogUpdates to disk!
+	fmt.Printf("[SignNextCommittment(%s) - local_key=%x, remote_key=%x]: "+
+		"add refs: %+v, settle refs: %+v!\n",
+		lc.ShortChanID(),
+		lc.LocalFundingKey.SerializeCompressed()[:10],
+		lc.RemoteFundingKey.SerializeCompressed()[:10],
+		commitDiff.AddAcks, commitDiff.SettleFailAcks,
+	)
 	err = lc.channelState.AppendRemoteCommitChain(commitDiff)
 	if err != nil {
 		return nil, err
@@ -5702,6 +5739,8 @@ func (lc *LightningChannel) ReceiveRevocation(revMsg *lnwire.RevokeAndAck) (
 		// locked-in at this new state. By doing this we ensure that we
 		// don't re-forward any already processed HTLC's after a
 		// restart.
+		//
+		// NOTE(1/20/23): The channel state machine does not reforward HTLCs?
 		switch {
 		case pd.EntryType == Add && committedAdd && shouldFwdAdd:
 			// Construct a reference specifying the location that
@@ -5711,6 +5750,13 @@ func (lc *LightningChannel) ReceiveRevocation(revMsg *lnwire.RevokeAndAck) (
 				Height: remoteChainTail,
 				Index:  addIndex,
 			}
+			fmt.Printf("[ReceiveRevocation(%s) - local_key=%x, remote_key=%x]: "+
+				"forwarding package add reference: %+v!\n",
+				lc.ShortChanID(),
+				lc.LocalFundingKey.SerializeCompressed()[:10],
+				lc.RemoteFundingKey.SerializeCompressed()[:10],
+				pd.SourceRef,
+			)
 			addIndex++
 
 			pd.isForwarded = true
@@ -5720,11 +5766,34 @@ func (lc *LightningChannel) ReceiveRevocation(revMsg *lnwire.RevokeAndAck) (
 			// Construct a reference specifying the location that
 			// this forwarded Settle/Fail will be written in the
 			// forwarding package constructed at this remote height.
+			//
+			// NOTE(11/23/22): An payment descriptor first receives a
+			// forwarding package destination reference when the HTLC
+			// update it describes, namely a (settle/fail) response
+			// to a previously forwarded (add), arrives at our link
+			// from a peer and has been commmited to. From the perspective
+			// of the original (add), the response has arrived and
+			// been committed to by the outgoing link. It just needs
+			// to be returned to the incoming link via the switch
+			// and continued on its journey back towards the sender.
+			// Will our incoming link's payment descriptor have the
+			// same destination reference?
+			// - Check SettleHTLC() or FailHTLC()
+			// - Yes! Though payment descriptors remain local to the link
+			// for whose HTLC update log they were created, the channeldb.SettleFailRefs
+			// are passed through the Switch via the htlcPacket structure
 			pd.DestRef = &channeldb.SettleFailRef{
 				Source: source,
 				Height: remoteChainTail,
 				Index:  settleFailIndex,
 			}
+			fmt.Printf("[ReceiveRevocation(%s) - local_key=%x, remote_key=%x]: "+
+				"forwarding package settle/fail reference: %+v!\n",
+				lc.ShortChanID(),
+				lc.LocalFundingKey.SerializeCompressed()[:10],
+				lc.RemoteFundingKey.SerializeCompressed()[:10],
+				pd.DestRef,
+			)
 			settleFailIndex++
 
 			pd.isForwarded = true
@@ -5870,6 +5939,9 @@ func (lc *LightningChannel) ReceiveRevocation(revMsg *lnwire.RevokeAndAck) (
 
 	remoteHTLCs := lc.channelState.RemoteCommitment.Htlcs
 
+	// NOTE(1/20/23): We have a forwarding package containing all ADD
+	// updates alongside the collection of non duplicate ADDs which
+	// should be forwarded.
 	return fwdPkg, addsToForward, settleFailsToForward, remoteHTLCs, nil
 }
 
@@ -6091,6 +6163,13 @@ func (lc *LightningChannel) MayAddOutgoingHtlc(amt lnwire.MilliSatoshi) error {
 func (lc *LightningChannel) htlcAddDescriptor(htlc *lnwire.UpdateAddHTLC,
 	openKey *models.CircuitKey) *PaymentDescriptor {
 
+	fmt.Printf("[AddHTLC(%s) - local_key=%x, remote_key=%x]: circuit key: %+v!\n",
+		lc.ShortChanID(),
+		lc.LocalFundingKey.SerializeCompressed()[:10],
+		lc.RemoteFundingKey.SerializeCompressed()[:10],
+		openKey,
+	)
+
 	return &PaymentDescriptor{
 		EntryType:      Add,
 		RHash:          PaymentHash(htlc.PaymentHash),
@@ -6210,6 +6289,14 @@ func (lc *LightningChannel) SettleHTLC(preimage [32]byte,
 	htlcIndex uint64, sourceRef *channeldb.AddRef,
 	destRef *channeldb.SettleFailRef, closeKey *models.CircuitKey) error {
 
+	fmt.Printf("[SettleHTLC(%s) - local_key=%x, remote_key=%x]: incoming (this) "+
+		"link fwd pkg add ref: %+v, outgoing link fwd pkg ref: %+v!\n",
+		lc.ShortChanID(),
+		lc.LocalFundingKey.SerializeCompressed()[:10],
+		lc.RemoteFundingKey.SerializeCompressed()[:10],
+		sourceRef, destRef,
+	)
+
 	lc.Lock()
 	defer lc.Unlock()
 
@@ -6258,6 +6345,16 @@ func (lc *LightningChannel) ReceiveHTLCSettle(preimage [32]byte, htlcIndex uint6
 	lc.Lock()
 	defer lc.Unlock()
 
+	fmt.Printf("[ReceiveHTLCSettle(%s) - local_key=%x, remote_key=%x]: "+
+		"preimage: %+v, htlc index: %d!\n",
+		lc.ShortChanID(),
+		lc.LocalFundingKey.SerializeCompressed()[:10],
+		lc.RemoteFundingKey.SerializeCompressed()[:10],
+		preimage, htlcIndex,
+	)
+
+	// NOTE(11/23/22): This HTLC (settle) update must be responding
+	// to a previous (add) we sent to the peer.
 	htlc := lc.localUpdateLog.lookupHtlc(htlcIndex)
 	if htlc == nil {
 		return ErrUnknownHtlcIndex{lc.ShortChanID(), htlcIndex}

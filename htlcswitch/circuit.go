@@ -2,6 +2,7 @@ package htlcswitch
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 
 	"github.com/lightningnetwork/lnd/channeldb"
@@ -76,6 +77,12 @@ func newPaymentCircuit(hash *[32]byte, pkt *htlcPacket) *PaymentCircuit {
 	if pkt.sourceRef != nil {
 		addRef = *pkt.sourceRef
 	}
+	fmt.Printf("[newPaymentCircuit(%s)]: forwarding package (processed update) add reference: %+v!\n",
+		pkt.incomingChanID, pkt.sourceRef,
+	)
+	fmt.Printf("[newPaymentCircuit(%s)]: htlcPacket: %+v!\n",
+		pkt.incomingChanID, pkt,
+	)
 
 	return &PaymentCircuit{
 		AddRef: addRef,
@@ -97,6 +104,12 @@ func makePaymentCircuit(hash *[32]byte, pkt *htlcPacket) PaymentCircuit {
 	if pkt.sourceRef != nil {
 		addRef = *pkt.sourceRef
 	}
+	fmt.Printf("[makePaymentCircuit(%s)]: forwarding package (processed update) add reference: %+v!\n",
+		pkt.incomingChanID, pkt.sourceRef,
+	)
+	fmt.Printf("[makePaymentCircuit(%s)]: htlcPacket: %+v!\n",
+		pkt.incomingChanID, pkt,
+	)
 
 	return PaymentCircuit{
 		AddRef: addRef,

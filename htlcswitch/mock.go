@@ -27,6 +27,7 @@ import (
 	"github.com/lightningnetwork/lnd/channeldb/models"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/contractcourt"
+	"github.com/lightningnetwork/lnd/htlcswitch/hodl"
 	"github.com/lightningnetwork/lnd/htlcswitch/hop"
 	"github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/lnpeer"
@@ -203,6 +204,7 @@ func initSwitchWithDB(startingHeight uint32, db *channeldb.DB) (*Switch, error) 
 		DustThreshold:          DefaultDustThreshold,
 		SignAliasUpdate:        signAliasUpdate,
 		IsAlias:                isAlias,
+		HodlMask:               hodl.MaskNone,
 	}
 
 	return New(cfg, startingHeight)
@@ -275,6 +277,7 @@ func (s *mockServer) Start() error {
 	if err := s.htlcSwitch.Start(); err != nil {
 		return err
 	}
+	// defer s.htlcSwitch.Stop()
 
 	s.wg.Add(1)
 	go func() {
@@ -334,6 +337,21 @@ func (r *mockHopIterator) HopPayload() (*hop.Payload, error) {
 	h := r.hops[0]
 	r.hops = r.hops[1:]
 	return h, nil
+}
+
+// IsFinalHop indicates whether a hop is the final hop in a payment route.
+// When the last hop parses its TLV payload via call to HopPayload(),
+// it will leave us with an empty hop iterator.
+//
+// NOTE: As this is a mock which does not use a real sphinx implementation
+// to signal the final hop via all-zero onion HMAC, we are relying on this
+// method being called AFTER HopPayload(). If this method is called BEFORE
+// parsing the TLV payload then it will NOT correctly report that we are
+// the final hop!
+func (r *mockHopIterator) IsFinalHop() bool {
+	fmt.Printf("TEST: There are %d hops left!\n", len(r.hops))
+
+	return len(r.hops) == 0
 }
 
 func (r *mockHopIterator) ExtraOnionBlob() []byte {
@@ -535,8 +553,22 @@ func (p *mockIteratorDecoder) DecodeHopIterators(id []byte,
 
 	batchSize := len(reqs)
 
+	fmt.Printf("[DecodeHopIterators()]: Decrypting %d onion packets\n", batchSize)
+
 	resps := make([]hop.DecodeHopIteratorResponse, 0, batchSize)
 	for _, req := range reqs {
+		var blindingPoint []byte
+		if req.BlindingPoint != nil {
+			blindingPoint = req.BlindingPoint.SerializeCompressed()[:10]
+		}
+		fmt.Printf("[DecodeHopIterators()]: Decrypting onion packet for HTLC ADD, "+
+			"amt=%s, cltv=%d, r_hash=%x, blinding_point=%x\n",
+			req.IncomingAmount.String(),
+			req.IncomingCltv,
+			req.RHash,
+			blindingPoint,
+		)
+
 		iterator, failcode := p.DecodeHopIterator(
 			req.OnionReader, req.RHash, req.IncomingCltv,
 		)
@@ -990,6 +1022,8 @@ func (m *mockChainNotifier) RegisterBlockEpochNtfn(*chainntnfs.BlockEpoch) (
 	}, nil
 }
 
+// NOTE(calvin): Whenever we call this we create an new invoice DB.
+// I don't think we support restarting the invoice DB!
 func newMockRegistry(minDelta uint32) *mockInvoiceRegistry {
 	cdb, cleanup, err := newDB()
 	if err != nil {
