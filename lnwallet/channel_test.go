@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"container/list"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -26,6 +27,19 @@ import (
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/stretchr/testify/require"
 )
+
+//nolint:lll
+const pubkeyStr = "020866e5191629f83dca77267829eea024cbe91066b8f6b822c5db76ed114ce0f3"
+
+func createPubkey(t *testing.T) *btcec.PublicKey {
+	pkBytes, err := hex.DecodeString(pubkeyStr)
+	require.NoError(t, err)
+
+	pk, err := btcec.ParsePubKey(pkBytes)
+	require.NoError(t, err)
+
+	return pk
+}
 
 // createHTLC is a utility function for generating an HTLC with a given
 // preimage and a given amount.
@@ -636,6 +650,72 @@ func testCommitHTLCSigTieBreak(t *testing.T, restart bool) {
 	// expecting the signatures in the proper order.
 	err = aliceChannel.ReceiveNewCommitment(bobSig, bobHtlcSigs)
 	require.NoError(t, err, "unable to receive bob's commitment")
+}
+
+// TestRestoreExtraData tests that additional data is restored to our update
+// log when we restart before an incoming htlc is irrevocably committed to by
+// the remote party. Specifically, this tests the case where:
+// * Alice sends Bob and incoming HTLC
+// * The HTLC has been irrevocably committed to by Bob.
+// * The HTLC is pending on Alice's commit.
+// * Bob restarts.
+func TestRestoreExtraData(t *testing.T) {
+	t.Parallel()
+
+	aliceChannel, bobChannel, err := CreateTestChannels(
+		t, channeldb.SingleFunderTweaklessBit,
+	)
+	require.NoError(t, err, "unable to create test channels")
+
+	// Create a htlc to add, and pack its extra data with our blinding
+	// point so that it will be stored.
+	htlcAmt := lnwire.MilliSatoshi(20000000)
+	htlc := &lnwire.UpdateAddHTLC{
+		ID:          0,
+		PaymentHash: [32]byte{1, 2, 3},
+		Amount:      htlcAmt,
+		Expiry:      10,
+		BlindingPoint: lnwire.BlindingPoint{
+			PublicKey: createPubkey(t),
+		},
+	}
+
+	_, err = aliceChannel.AddHTLC(htlc, nil)
+	require.NoError(t, err, "alice unable to add htlc")
+
+	_, err = bobChannel.ReceiveHTLC(htlc)
+	require.NoError(t, err, "bob unable to receive htlc")
+
+	// Irrevocably commit Bob to the HTLC.
+	aliceSig, aliceHtlcSigs, _, err := aliceChannel.SignNextCommitment()
+	require.NoError(t, err, "unable to sign alice's commitment")
+
+	err = bobChannel.ReceiveNewCommitment(aliceSig, aliceHtlcSigs)
+	require.NoError(t, err, "unable to receive alice's commitment")
+
+	bobRevocation, _, _, err := bobChannel.RevokeCurrentCommitment()
+	require.NoError(t, err, "unable to revoke bob's commitment")
+	_, _, _, _, err = aliceChannel.ReceiveRevocation(bobRevocation)
+	require.NoError(t, err, "unable to receive bob's revocation")
+
+	// Now, we restart Bob before he has irrevocably committed to the HTLC.
+	bobState := bobChannel.channelState
+	bobChannels, err := bobState.Db.FetchOpenChannels(
+		bobState.IdentityPub,
+	)
+	require.NoError(t, err, "bob fetch channels")
+
+	// Overwrite our old channel with the new "restarted" one.
+	bobChannel, err = NewLightningChannel(
+		bobChannel.Signer, bobChannels[0],
+		bobChannel.sigPool,
+	)
+	require.NoError(t, err, "unable to create new channel")
+
+	// Lookup the htlc in Bob's remote update log and assert that the
+	// blinding point is populated.
+	logHtlc := bobChannel.remoteUpdateLog.lookupHtlc(0)
+	require.Equal(t, htlc.BlindingPoint.PublicKey, logHtlc.BlindingPoint)
 }
 
 // TestCooperativeChannelClosure checks that the coop close process finishes
