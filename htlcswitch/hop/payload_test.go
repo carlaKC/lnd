@@ -438,3 +438,98 @@ func testDecodeHopPayloadValidation(t *testing.T, test decodePayloadTest) {
 		t.Fatalf("invalid custom records")
 	}
 }
+
+// TestValidateBlindedRouteData tests validation of the values provided in a
+// blinded route.
+func TestValidateBlindedRouteData(t *testing.T) {
+	tests := []struct {
+		name             string
+		data             *record.BlindedRouteData
+		incomingAmount   lnwire.MilliSatoshi
+		incomingTimelock uint32
+		err              error
+	}{
+		{
+			name: "max cltv expired",
+			data: &record.BlindedRouteData{
+				Constraints: &record.PaymentConstraints{
+					MaxCltvExpiry: 100,
+				},
+			},
+			incomingTimelock: 200,
+			err: hop.ErrInvalidPayload{
+				Type:      record.LockTimeOnionType,
+				Violation: hop.InsufficientViolation,
+			},
+		},
+		{
+			name: "zero max cltv",
+			data: &record.BlindedRouteData{
+				Constraints: &record.PaymentConstraints{
+					MaxCltvExpiry:   0,
+					HtlcMinimumMsat: 10,
+				},
+			},
+			incomingAmount:   100,
+			incomingTimelock: 10,
+			err:              nil,
+		},
+		{
+			name: "amount below minimum",
+			data: &record.BlindedRouteData{
+				Constraints: &record.PaymentConstraints{
+					HtlcMinimumMsat: 15,
+				},
+			},
+			incomingAmount: 10,
+			err: hop.ErrInvalidPayload{
+				Type:      record.AmtOnionType,
+				Violation: hop.InsufficientViolation,
+			},
+		},
+		{
+			name: "valid, no features",
+			data: &record.BlindedRouteData{
+				Constraints: &record.PaymentConstraints{
+					MaxCltvExpiry:   100,
+					HtlcMinimumMsat: 20,
+				},
+			},
+			incomingAmount:   40,
+			incomingTimelock: 80,
+		},
+		{
+			name: "unknown features",
+			data: &record.BlindedRouteData{
+				Constraints: &record.PaymentConstraints{
+					MaxCltvExpiry:   100,
+					HtlcMinimumMsat: 20,
+				},
+				Features: lnwire.NewFeatureVector(
+					lnwire.NewRawFeatureVector(
+						lnwire.FeatureBit(9999),
+					),
+					lnwire.Features,
+				),
+			},
+			incomingAmount:   40,
+			incomingTimelock: 80,
+			err: hop.ErrInvalidPayload{
+				Type:      record.FeatureVectorType,
+				Violation: hop.IncludedViolation,
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			err := hop.ValidateBlindedRouteData(
+				testCase.data, testCase.incomingAmount,
+				testCase.incomingTimelock,
+			)
+			require.Equal(t, testCase.err, err)
+		})
+	}
+}
