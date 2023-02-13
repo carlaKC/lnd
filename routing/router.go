@@ -1892,8 +1892,8 @@ func (r *ChannelRouter) FindRoute(req *RouteRequest) (*route.Route, float64,
 		return nil, 0, err
 	}
 
-	log.Debugf("Searching for path to %v, sending %v", req.target(),
-		req.Amount)
+	log.Debugf("Searching for path to %v, sending %v, final_cltv: %v", req.target(),
+		req.Amount, req.FinalExpiry)
 
 	// We'll attempt to obtain a set of bandwidth hints that can help us
 	// eliminate certain routes early on in the path finding process.

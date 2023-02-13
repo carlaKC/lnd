@@ -133,6 +133,10 @@ func (b *BlindedPayment) toRouteHints() map[route.Vertex][]*channeldb.CachedEdge
 		},
 	}
 
+	log.Infof("CKC intro hint: %v -> %v (fee: %v / %v, cltv %v",
+		fromNode, route.NewVertex(b.BlindedPath.BlindedHops[1].NodePub),
+		b.RelayInfo.BaseFee, b.RelayInfo.FeeRate, b.RelayInfo.CltvExpiryDelta)
+
 	// Start at an offset of 1 because the first node in our blinded hops
 	// is the introduction node and terminate at the second-last node
 	/// because we're dealing with hops as pairs.
@@ -160,6 +164,8 @@ func (b *BlindedPayment) toRouteHints() map[route.Vertex][]*channeldb.CachedEdge
 		hints[fromNode] = []*channeldb.CachedEdgePolicy{
 			hint,
 		}
+
+		log.Infof("CKC blinded hint: %v -> %v", fromNode, nextNode)
 	}
 
 	return hints

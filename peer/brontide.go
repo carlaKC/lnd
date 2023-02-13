@@ -1832,8 +1832,8 @@ func messageSummary(msg lnwire.Message) string {
 			msg.NextRevocationKey.SerializeCompressed())
 
 	case *lnwire.UpdateFailMalformedHTLC:
-		return fmt.Sprintf("chan_id=%v, id=%v, fail_code=%v",
-			msg.ChanID, msg.ID, msg.FailureCode)
+		return fmt.Sprintf("chan_id=%v, id=%v, fail_code=%v/ %d",
+			msg.ChanID, msg.ID, msg.FailureCode, msg.FailureCode)
 
 	case *lnwire.Warning:
 		return fmt.Sprintf("%v", msg.Warning())

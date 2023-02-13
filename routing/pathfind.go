@@ -197,8 +197,14 @@ func newRoute(sourceVertex route.Vertex,
 			// As this is the last hop, we'll use the specified
 			// final CLTV delta value instead of the value from the
 			// last link in the route.
+			log.Infof("CKC - Adding final CLTV delta to total: %v",
+				finalHop.cltvDelta)
+
 			totalTimeLock += uint32(finalHop.cltvDelta)
 			outgoingTimeLock = totalTimeLock
+
+			log.Infof("CKC - %v outgoing time lock: %v",
+				i, outgoingTimeLock)
 
 			// Attach any custom records to the final hop if the
 			// receiver supports TLV.
@@ -243,7 +249,13 @@ func newRoute(sourceVertex route.Vertex,
 			// the outgoing timelock or this hop. Then we'll
 			// increment the total timelock incurred by this hop.
 			outgoingTimeLock = totalTimeLock
+			log.Infof("CKC - %v outgoing time lock delta: %v",
+				i, pathEdges[i+1].TimeLockDelta)
+
 			totalTimeLock += uint32(pathEdges[i+1].TimeLockDelta)
+
+			log.Infof("CKC - %v outgoing time lock: %v",
+				i, outgoingTimeLock)
 		}
 
 		// Since we're traversing the path backwards atm, we prepend
