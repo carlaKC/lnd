@@ -1,6 +1,8 @@
 package lnwire
 
 import (
+	"encoding/hex"
+
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightningnetwork/lnd/tlv"
 )
@@ -19,6 +21,14 @@ const (
 // functions for public keys.
 type BlindingPoint struct {
 	*btcec.PublicKey
+}
+
+func (b *BlindingPoint) String() string {
+	if b == nil {
+		return "no-blinding"
+	}
+
+	return hex.EncodeToString(b.SerializeCompressed())
 }
 
 // NewBlindingPoint wraps a public key in the blinding point struct type.
