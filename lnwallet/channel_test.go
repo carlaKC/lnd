@@ -4291,6 +4291,97 @@ func TestFeeUpdateRejectInsaneFee(t *testing.T) {
 	}
 }
 
+// TestChannelRestoreBlindHTLC demonstrates that if we receive an HTLC
+// with a (route) blinding point, that the blinding point is recovered
+// after a restart.
+func TestChannelRestoreBlindHTLC(t *testing.T) {
+
+	// Create a test channel which will be used for the duration of this
+	// unittest. The channel will be funded evenly with Alice having 5 BTC,
+	// and Bob having 5 BTC.
+	aliceChannel, bobChannel, err := CreateTestChannels(
+		t, channeldb.SingleFunderTweaklessBit,
+	)
+	require.NoError(t, err, "unable to create test channels")
+
+	// First we create an HTLC that Alice will send to Bob.
+	// We add an ephemeral public key to the UpdateAddHTLC message
+	// to simulate the case that Bob is a forwarding node in the
+	// blinded portion of a route
+	htlc, _ := createHTLC(0, lnwire.MilliSatoshi(500000))
+	_, ephemeralBlindingPoint := btcec.PrivKeyFromBytes([]byte("test private key"))
+	htlc.BlindingPoint = lnwire.NewBlindingPoint(ephemeralBlindingPoint)
+
+	// -----add----->
+	_, err = aliceChannel.AddHTLC(htlc, nil)
+	require.NoError(t, err)
+	_, err = bobChannel.ReceiveHTLC(htlc)
+	require.NoError(t, err)
+
+	pdOld := bobChannel.remoteUpdateLog.lookupHtlc(0)
+	blindingPointBeforeRestart := pdOld.BlindingPoint
+	t.Logf("old blinding_point=%x", blindingPointBeforeRestart.SerializeCompressed()[:10])
+
+	// With the HTLC's applied to both update logs, we'll have Alice
+	// initiate a state transition to lock in this HTLC ADD update
+	// on both commitments.
+	// NOTE(11/25/22)): Recall that it is ReceiveRevocation() which
+	// builds the LogUpdate for the forwarding package we perist to disk.
+	// -----sig----->
+	// <----rev------
+	// <----sig------
+	// -----rev----->
+	err = ForceStateTransition(aliceChannel, bobChannel)
+	require.NoError(t, err)
+
+	// We'll now force a restart for Bob, so we can test the
+	// persistence related portion of this assertion.
+	bobChannel, err = restartChannel(bobChannel)
+	require.NoError(t, err, "unable to restart channel")
+
+	// Verify that Bob has access to the blinding point even
+	// after restoring state from disk.
+	// NOTE(11/25/22): As of now, the payment descriptors
+	// in our update log does not get a blinding point.
+	// We must have missed a method!!! (channeldb.HTLC)
+	// Do we even need the incoming blinding point for
+	// committed HTLCs being restored from disk? Or
+	// is the forwarding package enough on its own?
+	pdNew := bobChannel.remoteUpdateLog.lookupHtlc(0)
+	blindingPointAfterRestart := pdNew.BlindingPoint
+	// require.Nil(t, pdNew, "expected nil payment descriptor at index 0 after restart") // only if we don't lock in the ADD.
+	// require.Nil(t, pdNew.BlindingPoint, "unfortunately we expect nil "+
+	// 	"blinding point from payment descriptors in the update log "+
+	// 	"after restart")
+	require.Equal(t, blindingPointBeforeRestart, blindingPointAfterRestart, "expect blinding_point to match")
+	// t.Logf("new pay_desc=%+v", pdNew)
+	t.Logf("new blinding_point=%x", pdNew.BlindingPoint.SerializeCompressed()[:10])
+
+	// NOTE(11/25/22): We CAN access the bliding point after a restart
+	// if we grab our payment descriptors from our forwarding package:
+	// fwdpkg.LogUpdates --> payment descriptors
+	fwdPkgs, err := bobChannel.LoadFwdPkgs()
+	require.NoError(t, err, "unable to load forwarding packages")
+
+	addPayDescsFromFwdPkg, err := PayDescsFromRemoteLogUpdates(
+		bobChannel.ShortChanID(), 0, fwdPkgs[0].Adds,
+	)
+	require.NoError(t, err, "unable to convert channeldb.LogUpdate --> lnwallet.PaymentDescriptor for ADDs")
+
+	blindingPointFromFwdPkg := addPayDescsFromFwdPkg[0].BlindingPoint
+	t.Logf("from forwarding package, pay_desc=%+v", addPayDescsFromFwdPkg[0])
+	// t.Logf("from forwarding package, blinding_point=%x",
+	// 	blindingPointFromFwdPkg.SerializeCompressed()[:10])
+	// require.Nil(t, blindingPointFromFwdPkg, "unfortunately we expect payment "+
+	// 	"descriptors restored from LogUpdate in our forwarding packages to "+
+	// 	"nil blinding points after restart!")
+	require.Equal(t, blindingPointBeforeRestart, blindingPointFromFwdPkg, "expect blinding_point to match")
+
+	// TODO(11/27/22): write a ChannelLink level test which demonstrates ability to recover
+	// blinding point for the downstream peer from the LogUpdates stored on the CommitDiff!
+
+}
+
 // TestChannelRetransmissionFeeUpdate tests that the initiator will include any
 // pending fee updates if it needs to retransmit signatures.
 func TestChannelRetransmissionFeeUpdate(t *testing.T) {
@@ -10863,10 +10954,14 @@ func TestBlindingPointPersistence(t *testing.T) {
 
 	// Now, Alice will send a new commitment to Bob, which will persist our
 	// pending HTLC to disk.
-	_, err = aliceChannel.SignNextCommitment()
+	aliceCommit, err := aliceChannel.SignNextCommitment()
 	require.NoError(t, err, "unable to sign commitment")
 
 	// Restart alice to force fetching state from disk.
+	//
+	// NOTE(calvin): We restart immediately after sending SignNextCommitment
+	// and demonstrate that *alice* is able to recover the blinding point
+	// from disk.
 	aliceChannel, err = restartChannel(aliceChannel)
 	require.NoError(t, err, "unable to restart alice")
 
@@ -10874,4 +10969,44 @@ func TestBlindingPointPersistence(t *testing.T) {
 	remoteCommit := aliceChannel.remoteCommitChain.tip()
 	require.Len(t, remoteCommit.outgoingHTLCs, 1)
 	require.Equal(t, blinding, remoteCommit.outgoingHTLCs[0].BlindingPoint)
+
+	// NOTE(calvin): Is Bob able to recover the blinding point from disk?
+	err = bobChannel.ReceiveNewCommitment(aliceCommit.CommitSigs)
+	require.NoError(t, err, "bob unable to receive new commitment")
+
+	// We'll now force a restart for Bob, so we can test the
+	// persistence related portion of this assertion.
+	bobChannel, err = restartChannel(bobChannel)
+	require.NoError(t, err, "unable to restart bob's channel")
+
+	// If we exchange channel sync messages from the get-go , then both
+	// sides should conclude that no further synchronization is needed.
+	assertNoChanSyncNeeded(t, aliceChannel, bobChannel)
+
+	// Assert that Bob is NOT able to recover the blinding point from disk.
+	localCommit := bobChannel.localCommitChain.tip()
+	require.Len(t, localCommit.incomingHTLCs, 0)
+	require.Nil(t, localCommit.incomingHTLCs)
+
+	// NOTE: We need to simulate Alice re-transmitting the HTLC as we
+	// restarted early enough in the "commit dance" that we persisted no
+	// record of having seen the HTLC.
+	_, err = bobChannel.ReceiveHTLC(htlc)
+	require.NoError(t, err)
+
+	err = bobChannel.ReceiveNewCommitment(aliceCommit.CommitSigs)
+	require.NoError(t, err, "bob unable to receive new commitment")
+
+	_, _, _, err = bobChannel.RevokeCurrentCommitment()
+	require.NoError(t, err, "bob unable to revoke current commitment")
+
+	// We'll now force a restart for Bob, so we can test the
+	// persistence related portion of this assertion.
+	bobChannel, err = restartChannel(bobChannel)
+	require.NoError(t, err, "unable to restart bob's channel")
+
+	// Assert that Bob is able to recover the blinding point from disk.
+	localCommit = bobChannel.localCommitChain.tip()
+	require.Len(t, localCommit.incomingHTLCs, 1)
+	require.Equal(t, blinding, localCommit.incomingHTLCs[0].BlindingPoint)
 }

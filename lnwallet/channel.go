@@ -5754,6 +5754,14 @@ func (lc *LightningChannel) ReceiveRevocation(revMsg *lnwire.RevokeAndAck) (
 				Amount:      pd.Amount,
 				Expiry:      pd.Timeout,
 				PaymentHash: pd.RHash,
+				// NOTE(11/27/22): Here we add the (incoming) blinding point
+				// to the UpdateAddHTLC message so it is written to disk
+				// when we persist this LogUpdate. This is the LogUpdate that
+				// gets put in our ForwardingPackage, so it will be preserved
+				// once the ForwardingPackage is written to disk below.
+				// The blinding point will be available to our the incoming
+				// link after we restore our in-memory state after a restart!
+				// BlindingPoint: lnwire.NewBlindingPoint(pd.BlindingPoint),
 			}
 			copy(htlc.OnionBlob[:], pd.OnionBlob)
 			logUpdate.UpdateMsg = htlc
