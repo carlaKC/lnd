@@ -373,6 +373,7 @@ func TestOpenChannelPutGetDelete(t *testing.T) {
 			RHash:         key,
 			RefundTimeout: 1,
 			OnionBlob:     mockOnion(),
+			ExtraData:     make([]byte, 0),
 		},
 	}
 
@@ -384,6 +385,7 @@ func TestOpenChannelPutGetDelete(t *testing.T) {
 			RHash:         key,
 			RefundTimeout: 1,
 			OnionBlob:     mockOnion(),
+			ExtraData:     make([]byte, 0),
 		},
 	}
 
@@ -612,6 +614,7 @@ func TestChannelStateTransition(t *testing.T) {
 			OutputIndex:   int32(i * 3),
 			LogIndex:      uint64(i * 2),
 			HtlcIndex:     uint64(i),
+			ExtraData:     make([]byte, 0),
 		}
 		copy(
 			htlc.OnionBlob[:],
@@ -1529,4 +1532,78 @@ func TestFinalHtlcs(t *testing.T) {
 	// Test unknown htlc lookup for existing channel.
 	_, err = cdb.LookupFinalHtlc(chanID, unknownHtlcID)
 	require.ErrorIs(t, err, ErrHtlcUnknown)
+}
+
+// TestSerializeHTlCs tests serialization of HTLCs combined with extra data.
+func TestSerializeHTlCs(t *testing.T) {
+	t.Parallel()
+
+	mockHtlc := HTLC{
+		Signature:     testSig.Serialize(),
+		Incoming:      false,
+		Amt:           10,
+		RHash:         key,
+		RefundTimeout: 1,
+		OnionBlob:     mockOnion(),
+		ExtraData:     make([]byte, 0),
+	}
+
+	testCases := []struct {
+		name  string
+		htlcs []HTLC
+	}{
+		{
+			// Serialize multiple HLTCs with no extra data to
+			// assert that there is no regresion for HTLCs with
+			// no extra data.
+			name: "no extra data",
+			htlcs: []HTLC{
+				mockHtlc, mockHtlc,
+			},
+		},
+		{
+			name: "mixed extra data",
+			htlcs: []HTLC{
+				mockHtlc,
+				{
+					Signature:     testSig.Serialize(),
+					Incoming:      false,
+					Amt:           10,
+					RHash:         key,
+					RefundTimeout: 1,
+					OnionBlob:     mockOnion(),
+					ExtraData:     []byte{1, 2, 3},
+				},
+				mockHtlc,
+				{
+					Signature:     testSig.Serialize(),
+					Incoming:      false,
+					Amt:           10,
+					RHash:         key,
+					RefundTimeout: 1,
+					OnionBlob:     mockOnion(),
+					ExtraData: bytes.Repeat(
+						[]byte{9}, 999,
+					),
+				},
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			var b bytes.Buffer
+			err := SerializeHtlcs(&b, testCase.htlcs...)
+			require.NoError(t, err)
+
+			r := bytes.NewReader(b.Bytes())
+			htlcs, err := DeserializeHtlcs(r)
+			require.NoError(t, err)
+			require.Equal(t, testCase.htlcs, htlcs)
+		})
+	}
 }

@@ -747,6 +747,7 @@ func TestCommitSetStorage(t *testing.T) {
 			Amt:       1000,
 			OnionBlob: mockOnion(),
 			Signature: make([]byte, 0),
+			ExtraData: make([]byte, 0),
 		},
 	}
 
