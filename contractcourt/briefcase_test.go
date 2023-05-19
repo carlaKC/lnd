@@ -745,7 +745,7 @@ func TestCommitSetStorage(t *testing.T) {
 	activeHTLCs := []channeldb.HTLC{
 		{
 			Amt:       1000,
-			OnionBlob: make([]byte, 0),
+			OnionBlob: mockOnion(),
 			Signature: make([]byte, 0),
 		},
 	}

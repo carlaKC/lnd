@@ -29,7 +29,6 @@ var (
 	testResPreimage         = lntypes.Preimage{1, 2, 3}
 	testResHash             = testResPreimage.Hash()
 	testResCircuitKey       = models.CircuitKey{}
-	testOnionBlob           = []byte{4, 5, 6}
 	testAcceptHeight  int32 = 1234
 	testHtlcAmount          = 2300
 )
@@ -139,8 +138,9 @@ func TestHtlcIncomingResolverExitSettle(t *testing.T) {
 
 	ctx.waitForResult(true)
 
+	expetedOnion := mockOnion()
 	if !bytes.Equal(
-		ctx.onionProcessor.offeredOnionBlob, testOnionBlob,
+		ctx.onionProcessor.offeredOnionBlob, expetedOnion[:],
 	) {
 
 		t.Fatal("unexpected onion blob")
@@ -375,7 +375,7 @@ func newIncomingResolverTestContext(t *testing.T, isExit bool) *incomingResolver
 			htlc: channeldb.HTLC{
 				Amt:       lnwire.MilliSatoshi(testHtlcAmount),
 				RHash:     testResHash,
-				OnionBlob: testOnionBlob,
+				OnionBlob: mockOnion(),
 			},
 		},
 		htlcExpiry: testHtlcExpiry,

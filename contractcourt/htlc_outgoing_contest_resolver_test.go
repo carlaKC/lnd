@@ -183,7 +183,7 @@ func newOutgoingResolverTestContext(t *testing.T) *outgoingResolverTestContext {
 			htlc: channeldb.HTLC{
 				Amt:       lnwire.MilliSatoshi(testHtlcAmount),
 				RHash:     testResHash,
-				OnionBlob: testOnionBlob,
+				OnionBlob: mockOnion(),
 			},
 		},
 	}

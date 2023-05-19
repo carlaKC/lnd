@@ -1,6 +1,7 @@
 package contractcourt
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -10,7 +11,17 @@ import (
 	"time"
 
 	"github.com/lightningnetwork/lnd/channeldb"
+	"github.com/lightningnetwork/lnd/lnwire"
 )
+
+// mockOnion creates a mock onion blob of the correct size.
+func mockOnion() [lnwire.OnionPacketSize]byte {
+	var onion [lnwire.OnionPacketSize]byte
+	onionBlob := bytes.Repeat([]byte{1}, lnwire.OnionPacketSize)
+	copy(onion[:], onionBlob)
+
+	return onion
+}
 
 // timeout implements a test level timeout.
 func timeout() func() {

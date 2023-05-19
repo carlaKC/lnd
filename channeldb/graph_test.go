@@ -51,6 +51,14 @@ var (
 	testPub = route.Vertex{2, 202, 4}
 )
 
+func mockOnion() [lnwire.OnionPacketSize]byte {
+	var onion [lnwire.OnionPacketSize]byte
+	onionBlob := bytes.Repeat([]byte{1}, lnwire.OnionPacketSize)
+	copy(onion[:], onionBlob)
+
+	return onion
+}
+
 // MakeTestGraph creates a new instance of the ChannelGraph for testing purposes.
 func MakeTestGraph(t testing.TB, modifiers ...OptionModifier) (*ChannelGraph, error) {
 	opts := DefaultOptions()

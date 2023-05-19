@@ -110,7 +110,7 @@ func newHtlcResolverTestContext(t *testing.T,
 
 	htlc := channeldb.HTLC{
 		RHash:     testResHash,
-		OnionBlob: testOnionBlob,
+		OnionBlob: mockOnion(),
 		Amt:       testHtlcAmt,
 	}
 
