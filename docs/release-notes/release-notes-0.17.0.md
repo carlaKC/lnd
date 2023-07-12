@@ -105,6 +105,9 @@ on the old value of 10000](https://github.com/lightningnetwork/lnd/pull/7780).
 * [Fixed a bug where we didn't check for correct networks when submitting
   onchain transactions](https://github.com/lightningnetwork/lnd/pull/6448).
 
+* [Query routes](https://github.com/lightningnetwork/lnd/pull/7267) has been 
+  extended to support pathfinding to blinded routes.
+
 * [Fix non-deterministic behaviour in RPC calls for
   custom accounts](https://github.com/lightningnetwork/lnd/pull/7565).
   In theory, it should be only one custom account with a given name. However,
