@@ -128,6 +128,10 @@ type FwdResolution struct {
 	// FailureCode is the failure code that is to be passed back to the
 	// sender if action is FwdActionFail.
 	FailureCode lnwire.FailCode
+
+	// CustomRecords is an optional set of custom-range TLVs to include in
+	// the outgoing update_add_htlc, only used for FwdActionResume.
+	CustomRecords record.CustomSet
 }
 
 type fwdResolution struct {
@@ -373,7 +377,7 @@ func (s *InterceptableSwitch) resolve(res *FwdResolution) error {
 
 	switch res.Action {
 	case FwdActionResume:
-		return intercepted.Resume(nil)
+		return intercepted.Resume(res.CustomRecords)
 
 	case FwdActionSettle:
 		return intercepted.Settle(res.Preimage)

@@ -928,6 +928,15 @@ message ForwardHtlcInterceptResponse {
     // For backwards-compatibility reasons, TEMPORARY_CHANNEL_FAILURE is the
     // default value for this field.
     lnrpc.Failure.FailureCode failure_code = 5;
+
+    /*
+    An optional set of custom records to pass to the next hop along the route.
+    May only be set for ResolveHoldForwardAction RESUME, as this is the only
+    action that forwards the hltc along the route. Types are required to be in
+    the custom range >= 65536. When using REST, the values must be encoded as
+    base64.
+    */
+    map<uint64, bytes> outgoing_custom_records = 6;
 }
 
 enum ResolveHoldForwardAction {

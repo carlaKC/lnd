@@ -112,11 +112,21 @@ func (r *forwardInterceptor) resolveFromClient(
 		HtlcID: in.IncomingCircuitKey.HtlcId,
 	}
 
+	if in.OutgoingCustomRecords != nil &&
+		in.Action != ResolveHoldForwardAction_RESUME {
+
+		return status.Errorf(
+			codes.InvalidArgument, "Outgoing custom records can "+
+				"only be set for resumed HTLCs",
+		)
+	}
+
 	switch in.Action {
 	case ResolveHoldForwardAction_RESUME:
 		return r.htlcSwitch.Resolve(&htlcswitch.FwdResolution{
-			Key:    circuitKey,
-			Action: htlcswitch.FwdActionResume,
+			Key:           circuitKey,
+			Action:        htlcswitch.FwdActionResume,
+			CustomRecords: in.OutgoingCustomRecords,
 		})
 
 	case ResolveHoldForwardAction_FAIL:
