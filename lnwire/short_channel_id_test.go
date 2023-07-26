@@ -53,7 +53,7 @@ func TestScidTypeEncodeDecode(t *testing.T) {
 	}
 
 	var extraData ExtraOpaqueData
-	require.NoError(t, extraData.PackRecords(&aliasScid))
+	require.NoError(t, extraData.PackRecordProducers(&aliasScid))
 
 	var aliasScid2 ShortChannelID
 	tlvs, err := extraData.ExtractRecords(&aliasScid2)
