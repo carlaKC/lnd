@@ -464,9 +464,9 @@ func (s *InterceptableSwitch) interceptForward(packet *htlcPacket,
 		}
 
 		intercepted := &interceptedForward{
-			htlc:       htlc,
-			packet:     packet,
-			htlcSwitch: s.htlcSwitch,
+			updateAddHTLC: htlc,
+			packet:        packet,
+			htlcSwitch:    s.htlcSwitch,
 			autoFailHeight: int32(packet.incomingTimeout -
 				s.cltvRejectDelta),
 		}
@@ -583,7 +583,12 @@ func (s *InterceptableSwitch) handleExpired(fwd *interceptedForward) (
 // It is passed from the switch to external interceptors that are interested
 // in holding forwards and resolve them manually.
 type interceptedForward struct {
-	htlc           *lnwire.UpdateAddHTLC
+	// updateAddHTLC is the underlying HTLC that is contained in the
+	// packet's htlc type (which is a lnwire.Message interface type). This
+	// value is stored here for convenience so that we do not have to
+	// keep casting the interface. As this is a pointer, modifying this
+	// value *will* modify the HLTC stored in packet.
+	updateAddHTLC  *lnwire.UpdateAddHTLC
 	packet         *htlcPacket
 	htlcSwitch     *Switch
 	autoFailHeight int32
@@ -597,13 +602,13 @@ func (f *interceptedForward) Packet() InterceptedPacket {
 			HtlcID: f.packet.incomingHTLCID,
 		},
 		OutgoingChanID: f.packet.outgoingChanID,
-		Hash:           f.htlc.PaymentHash,
-		OutgoingExpiry: f.htlc.Expiry,
-		OutgoingAmount: f.htlc.Amount,
+		Hash:           f.updateAddHTLC.PaymentHash,
+		OutgoingExpiry: f.updateAddHTLC.Expiry,
+		OutgoingAmount: f.updateAddHTLC.Amount,
 		IncomingAmount: f.packet.incomingAmount,
 		IncomingExpiry: f.packet.incomingTimeout,
 		CustomRecords:  f.packet.customRecords,
-		OnionBlob:      f.htlc.OnionBlob,
+		OnionBlob:      f.updateAddHTLC.OnionBlob,
 		AutoFailHeight: f.autoFailHeight,
 	}
 }
@@ -629,7 +634,7 @@ func (f *interceptedForward) Fail(reason []byte) error {
 // specified failure code.
 func (f *interceptedForward) FailWithCode(code lnwire.FailCode) error {
 	shaOnionBlob := func() [32]byte {
-		return sha256.Sum256(f.htlc.OnionBlob[:])
+		return sha256.Sum256(f.updateAddHTLC.OnionBlob[:])
 	}
 
 	// Create a local failure.
@@ -696,7 +701,7 @@ func (f *interceptedForward) FailWithCode(code lnwire.FailCode) error {
 
 // Settle forwards a settled packet to the switch.
 func (f *interceptedForward) Settle(preimage lntypes.Preimage) error {
-	if !preimage.Matches(f.htlc.PaymentHash) {
+	if !preimage.Matches(f.updateAddHTLC.PaymentHash) {
 		return errors.New("preimage does not match hash")
 	}
 	return f.resolve(&lnwire.UpdateFulfillHTLC{
