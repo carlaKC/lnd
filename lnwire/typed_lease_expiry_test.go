@@ -14,7 +14,7 @@ func TestLeaseExpiryEncodeDecode(t *testing.T) {
 	leaseExpiry := LeaseExpiry(1337)
 
 	var extraData ExtraOpaqueData
-	require.NoError(t, extraData.PackRecords(&leaseExpiry))
+	require.NoError(t, extraData.PackRecordProducers(&leaseExpiry))
 
 	var leaseExpiry2 LeaseExpiry
 	tlvs, err := extraData.ExtractRecords(&leaseExpiry2)

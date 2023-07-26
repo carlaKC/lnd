@@ -48,10 +48,12 @@ func (e *ExtraOpaqueData) Decode(r io.Reader) error {
 	return nil
 }
 
-// PackRecords attempts to encode the set of tlv records into the target
+// PackRecordProducers attempts to encode the set of tlv records into the target
 // ExtraOpaqueData instance. The records will be encoded as a raw TLV stream
 // and stored within the backing slice pointer.
-func (e *ExtraOpaqueData) PackRecords(recordProducers ...tlv.RecordProducer) error {
+func (e *ExtraOpaqueData) PackRecordProducers(
+	recordProducers ...tlv.RecordProducer) error {
+
 	// First, assemble all the records passed in in series.
 	records := make([]tlv.Record, 0, len(recordProducers))
 	for _, producer := range recordProducers {
@@ -119,5 +121,5 @@ func EncodeMessageExtraData(extraData *ExtraOpaqueData,
 	// Pack in the series of TLV records into this message. The order we
 	// pass them in doesn't matter, as the method will ensure that things
 	// are all properly sorted.
-	return extraData.PackRecords(recordProducers...)
+	return extraData.PackRecordProducers(recordProducers...)
 }
