@@ -6,6 +6,7 @@ import (
 	"github.com/lightningnetwork/lnd/htlcswitch"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/record"
 )
 
 var (
@@ -13,14 +14,21 @@ var (
 	// resumed. This is the case in the on-chain resolution flow.
 	ErrCannotResume = errors.New("cannot resume in the on-chain flow")
 
-	// ErrCannotFail is returned when an intercepted forward cannot be failed.
-	// This is the case in the on-chain resolution flow.
+	// ErrNoCustomOnChain is returns when an on chain HTLC is resumed with
+	// custom records.
+	ErrNoCustomOnChain = errors.New("cannot provide custom records " +
+		"on-chain")
+
+	// ErrCannotFail is returned when an intercepted forward cannot be
+	// failed. This is the case in the on-chain resolution flow.
 	ErrCannotFail = errors.New("cannot fail in the on-chain flow")
 
-	// ErrPreimageMismatch is returned when the preimage that is specified to
-	// settle an htlc doesn't match the htlc hash.
+	// ErrPreimageMismatch is returned when the preimage that is specified
+	// to settle an htlc doesn't match the htlc hash.
 	ErrPreimageMismatch = errors.New("preimage does not match hash")
 )
+
+var _ htlcswitch.InterceptedForward = (*interceptedForward)(nil)
 
 // interceptedForward implements the on-chain behavior for the resolution of
 // a forwarded htlc.
@@ -47,7 +55,11 @@ func (f *interceptedForward) Packet() htlcswitch.InterceptedPacket {
 // Resume notifies the intention to resume an existing hold forward. This
 // basically means the caller wants to resume with the default behavior for this
 // htlc which usually means forward it.
-func (f *interceptedForward) Resume() error {
+func (f *interceptedForward) Resume(customRecords record.CustomSet) error {
+	if customRecords != nil {
+		return ErrNoCustomOnChain
+	}
+
 	return ErrCannotResume
 }
 
