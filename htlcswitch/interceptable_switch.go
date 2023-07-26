@@ -11,6 +11,8 @@ import (
 	"github.com/lightningnetwork/lnd/htlcswitch/hop"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/record"
+	"github.com/lightningnetwork/lnd/tlv"
 )
 
 var (
@@ -356,7 +358,7 @@ func (s *InterceptableSwitch) setInterceptor(interceptor ForwardInterceptor) {
 	log.Infof("Interceptor disconnected, resolving held packets")
 
 	s.heldHtlcSet.popAll(func(fwd InterceptedForward) {
-		err := fwd.Resume()
+		err := fwd.Resume(nil)
 		if err != nil {
 			log.Errorf("Failed to resume hold forward %v", err)
 		}
@@ -371,7 +373,7 @@ func (s *InterceptableSwitch) resolve(res *FwdResolution) error {
 
 	switch res.Action {
 	case FwdActionResume:
-		return intercepted.Resume()
+		return intercepted.Resume(nil)
 
 	case FwdActionSettle:
 		return intercepted.Settle(res.Preimage)
@@ -579,6 +581,9 @@ func (s *InterceptableSwitch) handleExpired(fwd *interceptedForward) (
 	return true, nil
 }
 
+// Compile time check that interceptedForward implements InterceptedForward.
+var _ InterceptedForward = (*interceptedForward)(nil)
+
 // interceptedForward implements the InterceptedForward interface.
 // It is passed from the switch to external interceptors that are interested
 // in holding forwards and resolve them manually.
@@ -614,7 +619,21 @@ func (f *interceptedForward) Packet() InterceptedPacket {
 }
 
 // Resume resumes the default behavior as if the packet was not intercepted.
-func (f *interceptedForward) Resume() error {
+// UpdateAddTLVs can optionally be provided to pack additional custom TLV
+// records into the UpdateAddHTLC message that is forwarded.
+func (f *interceptedForward) Resume(updateAddTLVs record.CustomSet) error {
+	// Pack custom records in EntraData if present. Note that this
+	// *must* be updated if LND starts to set other TLVs on UpdateAddHLTC,
+	// as this approach would override those values.
+	if updateAddTLVs != nil {
+		err := f.updateAddHTLC.ExtraData.SortAndPackRecords(
+			tlv.MapToRecords(updateAddTLVs)...,
+		)
+		if err != nil {
+			return fmt.Errorf("custom records failed: %w", err)
+		}
+	}
+
 	// Forward to the switch. A link quit channel isn't needed, because we
 	// are on a different thread now.
 	return f.htlcSwitch.ForwardPackets(nil, f.packet)
