@@ -15,7 +15,7 @@ func TestDeliveryAddressEncodeDecode(t *testing.T) {
 	)
 
 	var extraData ExtraOpaqueData
-	err := extraData.PackRecords(&addr)
+	err := extraData.PackRecordProducers(&addr)
 	if err != nil {
 		t.Fatal(err)
 	}

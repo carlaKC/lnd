@@ -118,7 +118,9 @@ func TestExtraOpaqueDataPackUnpackRecords(t *testing.T) {
 	// Now that we have our set of sample records and types, we'll encode
 	// them into the passed ExtraOpaqueData instance.
 	var extraBytes ExtraOpaqueData
-	if err := extraBytes.PackRecords(testRecordsProducers...); err != nil {
+	if err := extraBytes.PackRecordProducers(
+		testRecordsProducers...,
+	); err != nil {
 		t.Fatalf("unable to pack records: %v", err)
 	}
 
