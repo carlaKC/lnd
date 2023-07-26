@@ -60,6 +60,12 @@ func (e *ExtraOpaqueData) PackRecordProducers(
 		records = append(records, producer.Record())
 	}
 
+	return e.SortAndPackRecords(records...)
+}
+
+// SortAndPackRecords sorts a set of records and packs them into the target
+// ExtraOpaqueData instance.
+func (e *ExtraOpaqueData) SortAndPackRecords(records ...tlv.Record) error {
 	// Ensure that the set of records are sorted before we encode them into
 	// the stream, to ensure they're canonical.
 	tlv.SortRecords(records)
