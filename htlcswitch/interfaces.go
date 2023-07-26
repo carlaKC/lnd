@@ -325,10 +325,12 @@ type InterceptedForward interface {
 	// Packet returns the intercepted packet.
 	Packet() InterceptedPacket
 
-	// Resume notifies the intention to resume an existing hold forward. This
-	// basically means the caller wants to resume with the default behavior for
-	// this htlc which usually means forward it.
-	Resume() error
+	// Resume notifies the intention to resume an existing hold forward.
+	// This basically means the caller wants to resume with the default
+	// behavior for this htlc which usually means forward it. A set of
+	// custom records can optionally be specified for inclusion in the
+	// TLV payload of the outgoing UpdateAddHTLC.
+	Resume(updateAddTLVs record.CustomSet) error
 
 	// Settle notifies the intention to settle an existing hold
 	// forward with a given preimage.
