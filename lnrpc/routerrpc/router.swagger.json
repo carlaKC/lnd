@@ -1281,6 +1281,14 @@
           "format": "int64",
           "description": "The outgoing htlc expiry."
         },
+        "incoming_custom_records": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "byte"
+          },
+          "description": "Any custom records that were present in the incoming HLTC."
+        },
         "custom_records": {
           "type": "object",
           "additionalProperties": {

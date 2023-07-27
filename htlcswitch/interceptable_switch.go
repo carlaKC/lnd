@@ -616,6 +616,7 @@ func (f *interceptedForward) Packet() InterceptedPacket {
 		OutgoingAmount:        f.updateAddHTLC.Amount,
 		IncomingAmount:        f.packet.incomingAmount,
 		IncomingExpiry:        f.packet.incomingTimeout,
+		IncomingCustomRecords: f.packet.incomingCustomRecords,
 		CustomRecords:         f.packet.customRecords,
 		OnionBlob:             f.updateAddHTLC.OnionBlob,
 		AutoFailHeight:        f.autoFailHeight,

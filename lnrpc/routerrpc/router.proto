@@ -883,6 +883,9 @@ message ForwardHtlcInterceptRequest {
     // The outgoing htlc expiry.
     uint32 outgoing_expiry = 4;
 
+    // Any custom records that were present in the incoming HLTC.
+    map<uint64, bytes> incoming_custom_records = 11;
+
     // Any custom records that were present in the payload.
     map<uint64, bytes> custom_records = 8;
 
