@@ -93,6 +93,10 @@ type htlcPacket struct {
 	// link.
 	outgoingTimeout uint32
 
+	// incomingCustomRecords are user-defined records in the custom type 
+	// range that were included in the incoming HTLC.
+	incomingCustomRecords record.CustomSet
+
 	// customRecords are user-defined records in the custom type range that
 	// were included in the payload.
 	customRecords record.CustomSet
