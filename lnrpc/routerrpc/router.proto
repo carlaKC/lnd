@@ -901,7 +901,17 @@ message ForwardHtlcInterceptRequest {
     // The outgoing htlc expiry.
     uint32 outgoing_expiry = 4;
 
-    // Any custom records that were present in the payload.
+    /*
+    Any custom records that were present in the incoming HTLC's update add
+    htlc message. Note that these records are supplied by the forwarder of the
+    hltc (not the original sender).
+    */
+    map<uint64, bytes> incoming_update_add_custom_records = 11;
+
+    /*
+    Any custom records that were present in the payload, as supplied by the
+    original sender of the HTLC.
+    */
     map<uint64, bytes> custom_records = 8;
 
     // The onion blob for the next hop
