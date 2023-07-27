@@ -1281,13 +1281,21 @@
           "format": "int64",
           "description": "The outgoing htlc expiry."
         },
+        "incoming_update_add_custom_records": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "byte"
+          },
+          "description": "Any custom records that were present in the incoming HTLC's update add\nhtlc message. Note that these records are supplied by the forwarder of the\nhltc (not the original sender)."
+        },
         "custom_records": {
           "type": "object",
           "additionalProperties": {
             "type": "string",
             "format": "byte"
           },
-          "description": "Any custom records that were present in the payload."
+          "description": "Any custom records that were present in the payload, as supplied by the\noriginal sender of the HTLC."
         },
         "onion_blob": {
           "type": "string",

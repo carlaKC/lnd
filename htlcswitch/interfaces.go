@@ -302,6 +302,10 @@ type InterceptedPacket struct {
 	// IncomingAmount is the amount of the accepted htlc.
 	IncomingAmount lnwire.MilliSatoshi
 
+	// UpdateAddCustomRecords are user-defined records in the custom type
+	// range that were included in the incoming HTLC.
+	UpdateAddCustomRecords record.CustomSet
+
 	// CustomRecords are user-defined records in the custom type range that
 	// were included in the payload.
 	CustomRecords record.CustomSet
