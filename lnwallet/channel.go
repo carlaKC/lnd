@@ -27,6 +27,7 @@ import (
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/record"
 )
 
 var (
@@ -343,6 +344,15 @@ type PaymentDescriptor struct {
 	// NOTE: Populated only on add payment descriptor entry types.
 	OnionBlob []byte
 
+	// CustomRecords contains any custom-range records that were included
+	// in the HTLC's ExtraOpaqueData.
+	//
+	// NOTE: Populated only on add payment descriptor entry types.
+	//
+	// NOTE: CustomRecords are not available after restart, as we do not
+	// want to store (possibly junk) records set by remote parties.
+	CustomRecords record.CustomSet
+
 	// ShaOnionBlob is a sha of the onion blob.
 	//
 	// NOTE: Populated only in payment descriptor with MalformedFail type.
@@ -410,6 +420,11 @@ func PayDescsFromRemoteLogUpdates(chanID lnwire.ShortChannelID, height uint64,
 		switch wireMsg := logUpdate.UpdateMsg.(type) {
 
 		case *lnwire.UpdateAddHTLC:
+			custom, err := wireMsg.ExtraData.ExtractRecords()
+			if err != nil {
+				return nil, err
+			}
+
 			pd = PaymentDescriptor{
 				RHash:     wireMsg.PaymentHash,
 				Timeout:   wireMsg.Expiry,
@@ -421,6 +436,7 @@ func PayDescsFromRemoteLogUpdates(chanID lnwire.ShortChannelID, height uint64,
 					Height: height,
 					Index:  uint16(i),
 				},
+				CustomRecords: record.NewCustomRecords(custom),
 			}
 			pd.OnionBlob = make([]byte, len(wireMsg.OnionBlob))
 			copy(pd.OnionBlob[:], wireMsg.OnionBlob[:])
@@ -850,6 +866,8 @@ func (lc *LightningChannel) diskHtlcToPayDesc(feeRate chainfee.SatPerKWeight,
 	// With the scripts reconstructed (depending on if this is our commit
 	// vs theirs or a pending commit for the remote party), we can now
 	// re-create the original payment descriptor.
+	//
+	// Note: custom records are not populated for this descriptor.
 	pd = PaymentDescriptor{
 		RHash:              htlc.RHash,
 		Timeout:            htlc.RefundTimeout,
@@ -1442,6 +1460,10 @@ func (lc *LightningChannel) logUpdateToPayDesc(logUpdate *channeldb.LogUpdate,
 		// PaymentDescriptor struct. We also set addCommitHeightRemote
 		// as we've included this HTLC in our local commitment chain
 		// for the remote party.
+		custom, err := wireMsg.ExtraData.ExtractRecords()
+		if err != nil {
+			return nil, err
+		}
 		pd = &PaymentDescriptor{
 			RHash:                 wireMsg.PaymentHash,
 			Timeout:               wireMsg.Expiry,
@@ -1450,6 +1472,7 @@ func (lc *LightningChannel) logUpdateToPayDesc(logUpdate *channeldb.LogUpdate,
 			HtlcIndex:             wireMsg.ID,
 			LogIndex:              logUpdate.LogIndex,
 			addCommitHeightRemote: commitHeight,
+			CustomRecords:         record.NewCustomRecords(custom),
 		}
 		pd.OnionBlob = make([]byte, len(wireMsg.OnionBlob))
 		copy(pd.OnionBlob[:], wireMsg.OnionBlob[:])
@@ -1639,6 +1662,11 @@ func (lc *LightningChannel) remoteLogUpdateToPayDesc(logUpdate *channeldb.LogUpd
 
 	switch wireMsg := logUpdate.UpdateMsg.(type) {
 	case *lnwire.UpdateAddHTLC:
+		custom, err := wireMsg.ExtraData.ExtractRecords()
+		if err != nil {
+			return nil, err
+		}
+
 		pd := &PaymentDescriptor{
 			RHash:                wireMsg.PaymentHash,
 			Timeout:              wireMsg.Expiry,
@@ -1647,6 +1675,7 @@ func (lc *LightningChannel) remoteLogUpdateToPayDesc(logUpdate *channeldb.LogUpd
 			HtlcIndex:            wireMsg.ID,
 			LogIndex:             logUpdate.LogIndex,
 			addCommitHeightLocal: commitHeight,
+			CustomRecords:        record.NewCustomRecords(custom),
 		}
 		pd.OnionBlob = make([]byte, len(wireMsg.OnionBlob))
 		copy(pd.OnionBlob, wireMsg.OnionBlob[:])
@@ -5223,7 +5252,11 @@ func (lc *LightningChannel) AddHTLC(htlc *lnwire.UpdateAddHTLC,
 	lc.Lock()
 	defer lc.Unlock()
 
-	pd := lc.htlcAddDescriptor(htlc, openKey)
+	pd, err := lc.htlcAddDescriptor(htlc, openKey)
+	if err != nil {
+		return 0, err
+	}
+
 	if err := lc.validateAddHtlc(pd); err != nil {
 		return 0, err
 	}
@@ -5327,12 +5360,15 @@ func (lc *LightningChannel) MayAddOutgoingHtlc(amt lnwire.MilliSatoshi) error {
 	// to the commitment so that we validate commitment slots rather than
 	// available balance, since our actual htlc amount is unknown at this
 	// stage.
-	pd := lc.htlcAddDescriptor(
+	pd, err := lc.htlcAddDescriptor(
 		&lnwire.UpdateAddHTLC{
 			Amount: mockHtlcAmt,
 		},
 		&models.CircuitKey{},
 	)
+	if err != nil {
+		return nil
+	}
 
 	if err := lc.validateAddHtlc(pd); err != nil {
 		lc.log.Debugf("May add outgoing htlc rejected: %v", err)
@@ -5345,8 +5381,12 @@ func (lc *LightningChannel) MayAddOutgoingHtlc(amt lnwire.MilliSatoshi) error {
 // htlcAddDescriptor returns a payment descriptor for the htlc and open key
 // provided to add to our local update log.
 func (lc *LightningChannel) htlcAddDescriptor(htlc *lnwire.UpdateAddHTLC,
-	openKey *models.CircuitKey) *PaymentDescriptor {
+	openKey *models.CircuitKey) (*PaymentDescriptor, error) {
 
+	custom, err := htlc.ExtraData.ExtractRecords()
+	if err != nil {
+		return nil, err
+	}
 	return &PaymentDescriptor{
 		EntryType:      Add,
 		RHash:          PaymentHash(htlc.PaymentHash),
@@ -5355,8 +5395,9 @@ func (lc *LightningChannel) htlcAddDescriptor(htlc *lnwire.UpdateAddHTLC,
 		LogIndex:       lc.localUpdateLog.logIndex,
 		HtlcIndex:      lc.localUpdateLog.htlcCounter,
 		OnionBlob:      htlc.OnionBlob[:],
+		CustomRecords:  record.NewCustomRecords(custom),
 		OpenCircuitKey: openKey,
-	}
+	}, nil
 }
 
 // validateAddHtlc validates the addition of an outgoing htlc to our local and
@@ -5403,21 +5444,27 @@ func (lc *LightningChannel) ReceiveHTLC(htlc *lnwire.UpdateAddHTLC) (uint64, err
 			"ID %d", htlc.ID, lc.remoteUpdateLog.htlcCounter)
 	}
 
+	custom, err := htlc.ExtraData.ExtractRecords()
+	if err != nil {
+		return 0, err
+	}
+
 	pd := &PaymentDescriptor{
-		EntryType: Add,
-		RHash:     PaymentHash(htlc.PaymentHash),
-		Timeout:   htlc.Expiry,
-		Amount:    htlc.Amount,
-		LogIndex:  lc.remoteUpdateLog.logIndex,
-		HtlcIndex: lc.remoteUpdateLog.htlcCounter,
-		OnionBlob: htlc.OnionBlob[:],
+		EntryType:     Add,
+		RHash:         PaymentHash(htlc.PaymentHash),
+		Timeout:       htlc.Expiry,
+		Amount:        htlc.Amount,
+		LogIndex:      lc.remoteUpdateLog.logIndex,
+		HtlcIndex:     lc.remoteUpdateLog.htlcCounter,
+		OnionBlob:     htlc.OnionBlob[:],
+		CustomRecords: record.NewCustomRecords(custom),
 	}
 
 	localACKedIndex := lc.remoteCommitChain.tail().ourMessageIndex
 
 	// Clamp down on the number of HTLC's we can receive by checking the
 	// commitment sanity.
-	err := lc.validateCommitmentSanity(
+	err = lc.validateCommitmentSanity(
 		lc.remoteUpdateLog.logIndex, localACKedIndex, false, nil, pd,
 	)
 	if err != nil {
