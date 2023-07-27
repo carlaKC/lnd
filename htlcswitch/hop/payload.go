@@ -181,7 +181,7 @@ func NewPayloadFromReader(r io.Reader) (*Payload, error) {
 	}
 
 	// Filter out the custom records.
-	customRecords := NewCustomRecords(parsedTypes)
+	customRecords := record.NewCustomRecords(parsedTypes)
 
 	return &Payload{
 		FwdInfo: ForwardingInfo{
@@ -201,19 +201,6 @@ func NewPayloadFromReader(r io.Reader) (*Payload, error) {
 // e.g. amount, cltv, and next hop.
 func (h *Payload) ForwardingInfo() ForwardingInfo {
 	return h.FwdInfo
-}
-
-// NewCustomRecords filters the types parsed from the tlv stream for custom
-// records.
-func NewCustomRecords(parsedTypes tlv.TypeMap) record.CustomSet {
-	customRecords := make(record.CustomSet)
-	for t, parseResult := range parsedTypes {
-		if parseResult == nil || t < record.CustomTypeStart {
-			continue
-		}
-		customRecords[uint64(t)] = parseResult
-	}
-	return customRecords
 }
 
 // ValidateParsedPayloadTypes checks the types parsed from a hop payload to

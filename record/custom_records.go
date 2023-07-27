@@ -1,6 +1,10 @@
 package record
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/lightningnetwork/lnd/tlv"
+)
 
 const (
 	// CustomTypeStart is the start of the custom tlv type range as defined
@@ -21,4 +25,17 @@ func (c CustomSet) Validate() error {
 	}
 
 	return nil
+}
+
+// NewCustomRecords filters the types parsed from the tlv stream for custom
+// records.
+func NewCustomRecords(parsedTypes tlv.TypeMap) CustomSet {
+	customRecords := make(CustomSet)
+	for t, parseResult := range parsedTypes {
+		if parseResult == nil || t < CustomTypeStart {
+			continue
+		}
+		customRecords[uint64(t)] = parseResult
+	}
+	return customRecords
 }
