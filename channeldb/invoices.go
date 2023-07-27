@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/lightningnetwork/lnd/channeldb/models"
-	"github.com/lightningnetwork/lnd/htlcswitch/hop"
 	invpkg "github.com/lightningnetwork/lnd/invoices"
 	"github.com/lightningnetwork/lnd/kvdb"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -1702,7 +1701,7 @@ func deserializeHtlcs(r io.Reader) (map[models.CircuitKey]*invpkg.InvoiceHTLC,
 
 		// Reconstruct the custom records fields from the parsed types
 		// map return from the tlv parser.
-		htlc.CustomRecords = hop.NewCustomRecords(parsedTypes)
+		htlc.CustomRecords = record.NewCustomRecords(parsedTypes)
 
 		htlcs[key] = &htlc
 	}
