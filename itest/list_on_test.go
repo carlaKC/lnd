@@ -419,7 +419,7 @@ var allTestCases = []*lntest.TestCase{
 		TestFunc: testForwardInterceptorDedupHtlc,
 	},
 	{
-		Name:     "forward interceptor",
+		Name:     "basic forward interceptor",
 		TestFunc: testForwardInterceptorBasic,
 	},
 	{
