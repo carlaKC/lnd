@@ -1189,7 +1189,13 @@ func serializeHop(w io.Writer, h *route.Hop) error {
 	if h.Metadata != nil {
 		records = append(records, record.NewMetadataRecord(&h.Metadata))
 	}
-
+	if h.BlindedTotalAmt != 0 {
+		totalAmt := uint64(h.BlindedTotalAmt)
+		records = append(
+			records,
+			record.NewBlindedTotalAmtRecord(&totalAmt),
+		)
+	}
 	// Final sanity check to absolutely rule out custom records that are not
 	// custom and write into the standard range.
 	if err := h.CustomRecords.Validate(); err != nil {
@@ -1330,6 +1336,13 @@ func deserializeHop(r io.Reader) (*route.Hop, error) {
 		delete(tlvMap, metadataType)
 
 		h.Metadata = metadata
+	}
+
+	blindedTotalType := uint64(record.BlindedTotalAmtRecord)
+	if _, ok := tlvMap[blindedTotalType]; ok {
+		delete(tlvMap, blindedTotalType)
+		//TODO!
+		//h.BlindedTotalAmt = lnwire.MilliSatoshi(uint64(totalAmt))
 	}
 
 	h.CustomRecords = tlvMap

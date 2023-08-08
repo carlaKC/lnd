@@ -29,6 +29,8 @@ const (
 	// MetadataOnionType is the type used in the onion for the payment
 	// metadata.
 	MetadataOnionType tlv.Type = 16
+
+	BlindedTotalAmtRecord tlv.Type = 18
 )
 
 // NewAmtToFwdRecord creates a tlv.Record that encodes the amount_to_forward
@@ -80,5 +82,14 @@ func NewMetadataRecord(metadata *[]byte) tlv.Record {
 			return uint64(len(*metadata))
 		},
 		tlv.EVarBytes, tlv.DVarBytes,
+	)
+}
+
+func NewBlindedTotalAmtRecord(amt *uint64) tlv.Record {
+	return tlv.MakeDynamicRecord(
+		BlindedTotalAmtRecord, amt, func() uint64 {
+			return tlv.SizeTUint64(*amt)
+		},
+		tlv.ETUint64, tlv.DTUint64,
 	)
 }

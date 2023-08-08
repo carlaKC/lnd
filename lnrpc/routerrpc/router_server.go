@@ -414,11 +414,13 @@ func (s *Server) SendToRouteV2(ctx context.Context,
 		return nil, fmt.Errorf("unable to send, no routes provided")
 	}
 
+	fmt.Println("CKC send to route")
 	route, err := s.cfg.RouterBackend.UnmarshallRoute(req.Route)
 	if err != nil {
 		return nil, err
 	}
 
+	fmt.Println("CKC send to route: ", route.Hops[len(route.Hops)-1].BlindedTotalAmt)
 	hash, err := lntypes.MakeHash(req.PaymentHash)
 	if err != nil {
 		return nil, err

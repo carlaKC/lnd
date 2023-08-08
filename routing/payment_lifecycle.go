@@ -697,6 +697,8 @@ func (p *shardHandler) createNewPaymentAttempt(rt *route.Route, lastShard bool) 
 		hop.AMP = shard.AMP()
 	}
 
+	// TODO: carla - do we need to set here?
+
 	// Generate the raw encoded sphinx packet to be included along
 	// with the htlcAdd message that we send directly to the
 	// switch.

@@ -144,6 +144,7 @@ type MissionControl interface {
 func (r *RouterBackend) QueryRoutes(ctx context.Context,
 	in *lnrpc.QueryRoutesRequest) (*lnrpc.QueryRoutesResponse, error) {
 
+	fmt.Println("CKC query routes")
 	routeReq, err := r.parseQueryRoutesRequest(in)
 	if err != nil {
 		return nil, err
@@ -598,12 +599,15 @@ func (r *RouterBackend) MarshallRoute(route *route.Route) (*lnrpc.Route, error) 
 			PubKey: hex.EncodeToString(
 				hop.PubKeyBytes[:],
 			),
-			CustomRecords: hop.CustomRecords,
-			TlvPayload:    !hop.LegacyPayload,
-			MppRecord:     mpp,
-			Metadata:      hop.Metadata,
-			EncryptedData: hop.EncryptedData,
+			CustomRecords:     hop.CustomRecords,
+			TlvPayload:        !hop.LegacyPayload,
+			MppRecord:         mpp,
+			Metadata:          hop.Metadata,
+			EncryptedData:     hop.EncryptedData,
+			BlindedRouteTotal: uint64(hop.BlindedTotalAmt),
 		}
+
+		fmt.Println("CKC: last amount", hop.BlindedTotalAmt)
 
 		if hop.BlindingPoint != nil {
 			blinding := hop.BlindingPoint.SerializeCompressed()
@@ -645,7 +649,9 @@ func UnmarshallHopWithPubkey(rpcHop *lnrpc.Hop, pubkey route.Vertex) (*route.Hop
 		MPP:              mpp,
 		AMP:              amp,
 		EncryptedData:    rpcHop.EncryptedData,
+		BlindedTotalAmt:  lnwire.MilliSatoshi(rpcHop.BlindedRouteTotal),
 	}
+	fmt.Println("CKC UnmarshallHopWithPubkey ", rpcHop.BlindedRouteTotal)
 
 	haveBlindingPoint := len(rpcHop.BlindingPoint) != 0
 	if haveBlindingPoint {

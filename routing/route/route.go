@@ -140,6 +140,10 @@ type Hop struct {
 	// in blinded routes to unblind their portion of the route and pass on
 	// the next ephemeral key to the next blinded node to do the same.
 	BlindingPoint *btcec.PublicKey
+
+	// BlindedTotalAmt is a total amount field included for the final
+	// receiving node in a blinded path.
+	BlindedTotalAmt lnwire.MilliSatoshi
 }
 
 // Copy returns a deep copy of the Hop.
@@ -252,6 +256,13 @@ func (h *Hop) PackHopPayload(w io.Writer, nextChanID uint64) error {
 		)
 	}
 
+	if h.BlindedTotalAmt != 0 {
+		blindedTotal := uint64(h.BlindedTotalAmt)
+		records = append(
+			records,
+			record.NewBlindedTotalAmtRecord(&blindedTotal),
+		)
+	}
 	// Append any custom types destined for this hop.
 	tlvRecords := tlv.MapToRecords(h.CustomRecords)
 	records = append(records, tlvRecords...)
@@ -546,6 +557,7 @@ func (r *Route) ToSphinxPath() (*sphinx.PaymentPath, error) {
 
 		var payload sphinx.HopPayload
 
+		fmt.Println("CKC legacy payload: %v", hop.LegacyPayload)
 		// If this is the legacy payload, then we can just include the
 		// hop data as normal.
 		if hop.LegacyPayload {

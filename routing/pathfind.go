@@ -303,6 +303,8 @@ func newRoute(sourceVertex route.Vertex,
 			if i != len(hops)-1 {
 				hop.AmtToForward = 0
 				hop.OutgoingTimeLock = 0
+			} else {
+				hop.BlindedTotalAmt = finalHop.amt
 			}
 
 			dataIndex++

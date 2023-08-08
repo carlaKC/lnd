@@ -3129,6 +3129,8 @@ message Hop {
     node.
     */
     bytes encrypted_data = 15;
+
+    uint64 blinded_route_total = 16;
 }
 
 message MPPRecord {
