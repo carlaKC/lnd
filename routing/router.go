@@ -2049,6 +2049,9 @@ type LightningPayment struct {
 	// Metadata is additional data that is sent along with the payment to
 	// the payee.
 	Metadata []byte
+
+	// EndorseHTLC indicates whether we should endorse the outgoing HTLC.
+	EndorseHTLC bool
 }
 
 // AMPOptions houses information that must be known in order to send an AMP
