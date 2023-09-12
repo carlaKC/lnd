@@ -706,6 +706,13 @@ func (p *shardHandler) createNewPaymentAttempt(rt *route.Route, lastShard bool) 
 		return lnwire.ShortChannelID{}, nil, nil, err
 	}
 
+	var extraData lnwire.ExtraOpaqueData
+	if p.paySession != nil {
+		extraData, err = p.paySession.ExtraData()
+		if err != nil {
+			return lnwire.ShortChannelID{}, nil, nil, err
+		}
+	}
 	// Craft an HTLC packet to send to the layer 2 switch. The
 	// metadata within this packet will be used to route the
 	// payment through the network, starting with the first-hop.
@@ -713,6 +720,7 @@ func (p *shardHandler) createNewPaymentAttempt(rt *route.Route, lastShard bool) 
 		Amount:      rt.TotalAmount,
 		Expiry:      rt.TotalTimeLock,
 		PaymentHash: hash,
+		ExtraData:   extraData,
 	}
 	copy(htlcAdd.OnionBlob[:], onionBlob)
 
