@@ -538,7 +538,9 @@ func (r *RouterBackend) UnmarshallRoute(rpcroute *lnrpc.Route) (
 func (r *RouterBackend) extractIntentFromSendRequest(
 	rpcPayReq *SendPaymentRequest) (*routing.LightningPayment, error) {
 
-	payIntent := &routing.LightningPayment{}
+	payIntent := &routing.LightningPayment{
+		EndorseHTLC: rpcPayReq.Endorsed,
+	}
 
 	// Pass along time preference.
 	if rpcPayReq.TimePref < -1 || rpcPayReq.TimePref > 1 {

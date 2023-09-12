@@ -302,6 +302,11 @@ message SendPaymentRequest {
     only, to 1 to optimize for reliability only or a value inbetween for a mix.
     */
     double time_pref = 23;
+
+    /*
+    Signals whether to endorse the outgoing payment.
+    */
+    bool endorsed = 24;
 }
 
 message TrackPaymentRequest {
