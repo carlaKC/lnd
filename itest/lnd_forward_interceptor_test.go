@@ -11,8 +11,10 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc/routerrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/node"
+	"github.com/lightningnetwork/lnd/lntest/rpc"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -549,4 +551,95 @@ func (c *interceptorTestScenario) buildRoute(amtMsat int64,
 	routeResp := c.alice.RPC.BuildRoute(req)
 
 	return routeResp.Route
+}
+
+func testHTLCEndorsement(ht *lntest.HarnessTest) {
+	ts := newInterceptorTestScenario(ht)
+	alice, bob, carol, dave := ts.alice, ts.bob, ts.carol, ts.dave
+
+	// Open and wait for channels.
+	const chanAmt = btcutil.Amount(300000)
+	p := lntest.OpenChannelParams{Amt: chanAmt}
+	reqs := []*lntest.OpenChannelRequest{
+		{Local: alice, Remote: bob, Param: p},
+		{Local: bob, Remote: carol, Param: p},
+		{Local: carol, Remote: dave, Param: p},
+	}
+	resp := ht.OpenMultiChannelsAsync(reqs)
+	cpAB, cpBC, cpCD := resp[0], resp[1], resp[2]
+
+	// Make sure Alice is aware of all channels.
+	ht.AssertTopologyChannelOpen(alice, cpAB)
+	ht.AssertTopologyChannelOpen(alice, cpBC)
+	ht.AssertTopologyChannelOpen(alice, cpCD)
+
+	// Connect the bobInterceptor.
+	bobInterceptor, cancelBob := bob.RPC.HtlcInterceptor()
+	defer cancelBob()
+
+	// Subscribe to the interceptor for Carol so that we can see the
+	// HTLC that is forwarded on by Bob with correct values.
+	carolInterceptor, cancelCarol := carol.RPC.HtlcInterceptor()
+	defer cancelCarol()
+
+	invReq := &lnrpc.Invoice{ValueMsat: 1000}
+	addResponse := dave.RPC.AddInvoice(invReq)
+
+	paymentClient := alice.RPC.SendPayment(&routerrpc.SendPaymentRequest{
+		PaymentRequest:    addResponse.PaymentRequest,
+		NoInflightUpdates: true,
+		TimeoutSeconds:    120,
+		Endorsed:          true,
+		FeeLimitMsat:      noFeeLimitMsat,
+	})
+
+	interceptAndCheckEndorsed(ht, bobInterceptor, true)
+	interceptAndCheckEndorsed(ht, carolInterceptor, false)
+
+	pmt, err := paymentClient.Recv()
+	require.NoError(ht, err)
+
+	require.Equal(ht, lnrpc.Payment_SUCCEEDED, pmt.Status)
+
+	// Finally, close channels.
+	ht.CloseChannel(alice, cpAB)
+	ht.CloseChannel(bob, cpBC)
+	ht.CloseChannel(carol, cpCD)
+}
+
+func interceptAndCheckEndorsed(ht *lntest.HarnessTest,
+	interceptor rpc.InterceptorClient, endorsed bool) {
+
+	respChan := make(chan *routerrpc.ForwardHtlcInterceptRequest, 1)
+	go func() {
+		defer close(respChan)
+
+		request, err := interceptor.Recv()
+		require.NoError(ht, err)
+
+		respChan <- request
+	}()
+
+	var request *routerrpc.ForwardHtlcInterceptRequest
+	select {
+	case request = <-respChan:
+
+	case <-time.After(defaultTimeout):
+		ht.Fatal("timeout waiting for interceptor")
+	}
+
+	require.NotNil(ht, request)
+
+	recordType := uint64(lnwire.EndorsedHTLCExperimental)
+	record, ok := request.IncomingCustomRecords[recordType]
+	require.Equal(ht, endorsed, ok)
+
+	if endorsed {
+		require.EqualValues(ht, []byte{0x1}, record)
+	}
+
+	interceptor.Send(&routerrpc.ForwardHtlcInterceptResponse{
+		IncomingCircuitKey: request.IncomingCircuitKey,
+		Action:             routerrpc.ResolveHoldForwardAction_RESUME,
+	})
 }
