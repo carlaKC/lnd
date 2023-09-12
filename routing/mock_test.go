@@ -185,6 +185,12 @@ func (m *mockPaymentSessionOld) GetAdditionalEdgePolicy(_ *btcec.PublicKey,
 	return nil
 }
 
+func (m *mockPaymentSessionOld) ExtraData() (lnwire.ExtraOpaqueData,
+	error) {
+
+	return nil, nil
+}
+
 type mockPayerOld struct {
 	sendResult    chan error
 	paymentResult chan *htlcswitch.PaymentResult
@@ -662,6 +668,10 @@ type mockPaymentSession struct {
 }
 
 var _ PaymentSession = (*mockPaymentSession)(nil)
+
+func (m *mockPaymentSession) ExtraData() (*lnwire.ErrorData, error) {
+	return nil, nil
+}
 
 func (m *mockPaymentSession) RequestRoute(maxAmt, feeLimit lnwire.MilliSatoshi,
 	activeShards, height uint32) (*route.Route, error) {

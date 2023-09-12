@@ -151,6 +151,10 @@ type PaymentSession interface {
 	// if nothing found.
 	GetAdditionalEdgePolicy(pubKey *btcec.PublicKey,
 		channelID uint64) *channeldb.CachedEdgePolicy
+
+	// ExtraData returns any extra data packed in TLVs that should be
+	// included in the outgoing HTLC.
+	ExtraData() (lnwire.ExtraOpaqueData, error)
 }
 
 // paymentSession is used during an HTLC routings session to prune the local
@@ -448,4 +452,20 @@ func (p *paymentSession) GetAdditionalEdgePolicy(pubKey *btcec.PublicKey,
 	}
 
 	return nil
+}
+
+// ExtraData packs any extra TLV data that should be included in the outgoing
+// HTLC.
+//
+// Note: part of the PaymentSession interface.
+func (p *paymentSession) ExtraData() (lnwire.ExtraOpaqueData, error) {
+	var extraData lnwire.ExtraOpaqueData
+
+	if err := extraData.SortAndPackRecords(
+		lnwire.NewEndorsedRecord(p.payment.EndorseHTLC),
+	); err != nil {
+		return nil, err
+	}
+
+	return extraData, nil
 }
