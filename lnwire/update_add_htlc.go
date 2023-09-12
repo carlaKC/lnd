@@ -3,6 +3,8 @@ package lnwire
 import (
 	"bytes"
 	"io"
+
+	"github.com/lightningnetwork/lnd/tlv"
 )
 
 // OnionPacketSize is the size of the serialized Sphinx onion packet included
@@ -131,4 +133,25 @@ func (c *UpdateAddHTLC) MsgType() MessageType {
 // NOTE: Part of peer.LinkUpdater interface.
 func (c *UpdateAddHTLC) TargetChanID() ChannelID {
 	return c.ChanID
+}
+
+// EndorsedHTLCExperimental is the TLV number for experimental HTLC
+// endorsement signaling.
+// See: https://github.com/lightning/blips/pull/27
+const EndorsedHTLCExperimental tlv.Type = 65555
+
+// NewEndorsedRecord creates a TLV record for a single-byte endorsement record.
+// NOTE: This encoding allows varlength bytes, but the spec only allows a
+// single byte value. This is done so that we can use MakePrimitiveRecord, and
+// is very lazy / should be fixed.
+func NewEndorsedRecord(endorsed bool) tlv.Record {
+	// TODO: custom record producer.
+	var value byte
+	if endorsed {
+		value = 0x1
+	}
+
+	return tlv.MakePrimitiveRecord(
+		EndorsedHTLCExperimental, &value,
+	)
 }
