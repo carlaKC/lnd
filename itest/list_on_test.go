@@ -415,6 +415,10 @@ var allTestCases = []*lntest.TestCase{
 		TestFunc: testForwardInterceptorBasic,
 	},
 	{
+		Name:     "endorsement signal",
+		TestFunc: testHTLCEndorsement,
+	},
+	{
 		Name:     "zero conf channel open",
 		TestFunc: testZeroConfChannelOpen,
 	},
