@@ -41,7 +41,8 @@ func newNodeEdgeUnifier(sourceNode, toNode route.Vertex,
 // addPolicy adds a single channel policy. Capacity may be zero if unknown
 // (light clients).
 func (u *nodeEdgeUnifier) addPolicy(fromNode route.Vertex,
-	edge *channeldb.CachedEdgePolicy, capacity btcutil.Amount) {
+	edge *channeldb.CachedEdgePolicy, capacity btcutil.Amount,
+	hopPayloadSize uint64) {
 
 	localChan := fromNode == u.sourceNode
 
@@ -62,8 +63,9 @@ func (u *nodeEdgeUnifier) addPolicy(fromNode route.Vertex,
 	}
 
 	unifier.edges = append(unifier.edges, &unifiedEdge{
-		policy:   edge,
-		capacity: capacity,
+		policy:         edge,
+		capacity:       capacity,
+		hopPayloadSize: hopPayloadSize,
 	})
 }
 
@@ -78,9 +80,12 @@ func (u *nodeEdgeUnifier) addGraphPolicies(g routingGraph) error {
 			return nil
 		}
 
-		// Add this policy to the corresponding edgeUnifier.
+		// Add this policy to the corresponding edgeUnifier. We only
+		// set the hopPayload if the hop is part of a blinded path. This
+		// is never the case in this function.
 		u.addPolicy(
 			channel.OtherNode, channel.InPolicy, channel.Capacity,
+			0,
 		)
 
 		return nil
@@ -93,8 +98,9 @@ func (u *nodeEdgeUnifier) addGraphPolicies(g routingGraph) error {
 // unifiedEdge is the individual channel data that is kept inside an edgeUnifier
 // object.
 type unifiedEdge struct {
-	policy   *channeldb.CachedEdgePolicy
-	capacity btcutil.Amount
+	policy         *channeldb.CachedEdgePolicy
+	capacity       btcutil.Amount
+	hopPayloadSize uint64
 }
 
 // amtInRange checks whether an amount falls within the valid range for a
@@ -219,8 +225,9 @@ func (u *edgeUnifier) getEdgeLocal(amt lnwire.MilliSatoshi,
 
 		// Update best edge.
 		bestEdge = &unifiedEdge{
-			policy:   edge.policy,
-			capacity: edge.capacity,
+			policy:         edge.policy,
+			capacity:       edge.capacity,
+			hopPayloadSize: edge.hopPayloadSize,
 		}
 	}
 
@@ -233,10 +240,11 @@ func (u *edgeUnifier) getEdgeLocal(amt lnwire.MilliSatoshi,
 // forwarding context.
 func (u *edgeUnifier) getEdgeNetwork(amt lnwire.MilliSatoshi) *unifiedEdge {
 	var (
-		bestPolicy  *channeldb.CachedEdgePolicy
-		maxFee      lnwire.MilliSatoshi
-		maxTimelock uint16
-		maxCapMsat  lnwire.MilliSatoshi
+		bestPolicy        *channeldb.CachedEdgePolicy
+		maxFee            lnwire.MilliSatoshi
+		maxTimelock       uint16
+		maxCapMsat        lnwire.MilliSatoshi
+		maxHopPayloadSize uint64
 	)
 
 	for _, edge := range u.edges {
@@ -267,6 +275,10 @@ func (u *edgeUnifier) getEdgeNetwork(amt lnwire.MilliSatoshi) *unifiedEdge {
 			capMsat = edge.policy.MaxHTLC
 		}
 		maxCapMsat = lntypes.Max(capMsat, maxCapMsat)
+
+		maxHopPayloadSize = lntypes.Max(
+			edge.hopPayloadSize, maxHopPayloadSize,
+		)
 
 		// Track the maximum time lock of all channels that are
 		// candidate for non-strict forwarding at the routing node.
@@ -307,6 +319,7 @@ func (u *edgeUnifier) getEdgeNetwork(amt lnwire.MilliSatoshi) *unifiedEdge {
 	modifiedEdge := unifiedEdge{policy: &policyCopy}
 	modifiedEdge.policy.TimeLockDelta = maxTimelock
 	modifiedEdge.capacity = maxCapMsat.ToSatoshis()
+	modifiedEdge.hopPayloadSize = maxHopPayloadSize
 
 	return &modifiedEdge
 }

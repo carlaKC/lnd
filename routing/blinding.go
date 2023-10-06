@@ -99,7 +99,7 @@ func (b *BlindedPayment) toRouteHints() RouteHints {
 
 	hintCount := len(b.BlindedPath.BlindedHops) - 1
 	hints := make(
-		map[route.Vertex][]*channeldb.CachedEdgePolicy, hintCount,
+		map[route.Vertex][]AdditionalEdge, hintCount,
 	)
 
 	// Start at the unblinded introduction node, because our pathfinding
@@ -116,25 +116,44 @@ func (b *BlindedPayment) toRouteHints() RouteHints {
 	// will ensure that pathfinding provides sufficient fees/delay for the
 	// blinded portion to the introduction node.
 	firstBlindedHop := b.BlindedPath.BlindedHops[1].BlindedNodePub
-	hints[fromNode] = []*channeldb.CachedEdgePolicy{
-		{
-			TimeLockDelta: b.CltvExpiryDelta,
-			MinHTLC:       lnwire.MilliSatoshi(b.HtlcMinimum),
-			MaxHTLC:       lnwire.MilliSatoshi(b.HtlcMaximum),
-			FeeBaseMSat:   lnwire.MilliSatoshi(b.BaseFee),
-			FeeProportionalMillionths: lnwire.MilliSatoshi(
-				b.ProportionalFee,
-			),
-			ToNodePubKey: func() route.Vertex {
-				return route.NewVertex(
-					// The first node in this slice is
-					// the introduction node, so we start
-					// at index 1 to get the first blinded
-					// relaying node.
-					firstBlindedHop,
-				)
-			},
-			ToNodeFeatures: features,
+	edgePolicy := &channeldb.CachedEdgePolicy{
+		TimeLockDelta: b.CltvExpiryDelta,
+		MinHTLC:       lnwire.MilliSatoshi(b.HtlcMinimum),
+		MaxHTLC:       lnwire.MilliSatoshi(b.HtlcMaximum),
+		FeeBaseMSat:   lnwire.MilliSatoshi(b.BaseFee),
+		FeeProportionalMillionths: lnwire.MilliSatoshi(
+			b.ProportionalFee,
+		),
+		ToNodePubKey: func() route.Vertex {
+			return route.NewVertex(
+				// The first node in this slice is
+				// the introduction node, so we start
+				// at index 1 to get the first blinded
+				// relaying node.
+				firstBlindedHop,
+			)
+		},
+		ToNodeFeatures: features,
+	}
+
+	// Calculate the hopPayload Size this edge would need. The introduction
+	// point includes the blinding point for the payment hence it is treated
+	// differently. We anticipate that the creator of the blinded route
+	// chose nodes which support the tlv feature otherwise a payment would
+	// fail anyways.
+	hop := route.Hop{
+		BlindingPoint: b.BlindedPath.BlindingPoint,
+		LegacyPayload: false,
+		EncryptedData: b.BlindedPath.BlindedHops[0].CipherText,
+	}
+
+	hints[fromNode] = []AdditionalEdge{
+		&DirectedEdge{
+			policy: edgePolicy,
+			// Intermediary nodes do not include the channelID in
+			// the non-encrypted hop data therefore we set the next
+			// channelID to 0.
+			payLoadSize: hop.PayloadSize(0),
 		},
 	}
 
@@ -156,15 +175,28 @@ func (b *BlindedPayment) toRouteHints() RouteHints {
 			b.BlindedPath.BlindedHops[nextHopIdx].BlindedNodePub,
 		)
 
-		hint := &channeldb.CachedEdgePolicy{
+		edgePolicy := &channeldb.CachedEdgePolicy{
 			ToNodePubKey: func() route.Vertex {
 				return nextNode
 			},
 			ToNodeFeatures: features,
 		}
 
-		hints[fromNode] = []*channeldb.CachedEdgePolicy{
-			hint,
+		// Create the hop data for intermediary nodes to calculate the
+		// hop payload size beforehand.
+		hop := route.Hop{
+			LegacyPayload: false,
+			EncryptedData: b.BlindedPath.BlindedHops[i].CipherText,
+		}
+
+		hints[fromNode] = []AdditionalEdge{
+			&DirectedEdge{
+				policy: edgePolicy,
+				// Intermediary nodes do not include the
+				// channelID in the non-encrypted hop data
+				// therefore we set the next channelID to 0.
+				payLoadSize: hop.PayloadSize(0),
+			},
 		}
 	}
 
