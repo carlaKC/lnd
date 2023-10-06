@@ -272,7 +272,7 @@ func (r *RouterBackend) parseQueryRoutesRequest(in *lnrpc.QueryRoutesRequest) (
 	// inside of the path rather than the request's fields.
 	var (
 		targetPubKey   *route.Vertex
-		routeHintEdges map[route.Vertex][]routing.AdditionalEdge
+		routeHintEdges map[route.Vertex][]*routing.DirectedEdge
 		blindedPmt     *routing.BlindedPayment
 
 		// finalCLTVDelta varies depending on whether we're sending to

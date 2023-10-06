@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	sphinx "github.com/lightningnetwork/lightning-onion"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -99,7 +100,7 @@ func (b *BlindedPayment) toRouteHints() RouteHints {
 
 	hintCount := len(b.BlindedPath.BlindedHops) - 1
 	hints := make(
-		map[route.Vertex][]AdditionalEdge, hintCount,
+		map[route.Vertex][]*DirectedEdge, hintCount,
 	)
 
 	// Start at the unblinded introduction node, because our pathfinding
@@ -136,24 +137,13 @@ func (b *BlindedPayment) toRouteHints() RouteHints {
 		ToNodeFeatures: features,
 	}
 
-	// Calculate the hopPayload Size this edge would need. The introduction
-	// point includes the blinding point for the payment hence it is treated
-	// differently. We anticipate that the creator of the blinded route
-	// chose nodes which support the tlv feature otherwise a payment would
-	// fail anyways.
-	hop := route.Hop{
-		BlindingPoint: b.BlindedPath.BlindingPoint,
-		LegacyPayload: false,
-		EncryptedData: b.BlindedPath.BlindedHops[0].CipherText,
-	}
-
-	hints[fromNode] = []AdditionalEdge{
+	hints[fromNode] = []*DirectedEdge{
 		&DirectedEdge{
 			policy: edgePolicy,
-			// Intermediary nodes do not include the channelID in
-			// the non-encrypted hop data therefore we set the next
-			// channelID to 0.
-			payLoadSize: hop.PayloadSize(0),
+			payloadSizeFunc: blindedPathSizeFunc(
+				b.BlindedPath.BlindingPoint,
+				b.BlindedPath.BlindedHops[0].CipherText,
+			),
 		},
 	}
 
@@ -182,23 +172,38 @@ func (b *BlindedPayment) toRouteHints() RouteHints {
 			ToNodeFeatures: features,
 		}
 
-		// Create the hop data for intermediary nodes to calculate the
-		// hop payload size beforehand.
-		hop := route.Hop{
-			LegacyPayload: false,
-			EncryptedData: b.BlindedPath.BlindedHops[i].CipherText,
-		}
-
-		hints[fromNode] = []AdditionalEdge{
+		hints[fromNode] = []*DirectedEdge{
 			&DirectedEdge{
 				policy: edgePolicy,
 				// Intermediary nodes do not include the
 				// channelID in the non-encrypted hop data
 				// therefore we set the next channelID to 0.
-				payLoadSize: hop.PayloadSize(0),
+				payloadSizeFunc: blindedPathSizeFunc(
+					nil,
+					b.BlindedPath.BlindedHops[i].CipherText,
+				),
 			},
 		}
 	}
 
 	return hints
+}
+
+// blindedPathSizeFunc returns a closure that can be used to calculate the
+// size of blinded hop. A blinding point should only be non-nil for the
+// introduction point.
+func blindedPathSizeFunc(blindingPoint *btcec.PublicKey,
+	data []byte) customEdgeSizeFunc {
+
+	return func(amount lnwire.MilliSatoshi, expiry uint32, legacy bool,
+		channelID uint64) uint64 {
+
+		hop := route.Hop{
+			BlindingPoint: blindingPoint,
+			LegacyPayload: false,
+			EncryptedData: data,
+		}
+
+		return hop.PayloadSize(channelID)
+	}
 }

@@ -162,7 +162,7 @@ type PaymentSession interface {
 // loop if payment attempts take long enough. An additional set of edges can
 // also be provided to assist in reaching the payment's destination.
 type paymentSession struct {
-	additionalEdges map[route.Vertex][]AdditionalEdge
+	additionalEdges map[route.Vertex][]*DirectedEdge
 
 	getBandwidthHints func(routingGraph) (bandwidthHints, error)
 

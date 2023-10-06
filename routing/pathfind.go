@@ -87,7 +87,7 @@ var (
 // of the edge.
 type edgePolicyWithSource struct {
 	sourceNode route.Vertex
-	edge       AdditionalEdge
+	edge       *DirectedEdge
 }
 
 // finalHopParams encapsulates various parameters for route construction that
@@ -355,7 +355,7 @@ type graphParams struct {
 	// additionalEdges is an optional set of edges that should be
 	// considered during path finding, that is not already found in the
 	// channel graph. Can be blinded edges too.
-	additionalEdges map[route.Vertex][]AdditionalEdge
+	additionalEdges map[route.Vertex][]*DirectedEdge
 
 	// bandwidthHints is an interface that provides bandwidth hints that
 	// can provide a better estimate of the current channel bandwidth than
@@ -836,27 +836,15 @@ func findPath(g *graphParams, r *RestrictParams, cfg *PathFindingConfig,
 		// blob.
 		var payloadSize uint64
 		if fromVertex != source {
-			// For non-blinded the hopPayload size will always be
-			// zero so we need to calculate it.
-			if edge.hopPayloadSize == 0 {
-				supportsTlv := fromFeatures.HasFeature(
-					lnwire.TLVOnionPayloadOptional,
-				)
+			supportsTlv := fromFeatures.HasFeature(
+				lnwire.TLVOnionPayloadOptional,
+			)
 
-				hop := route.Hop{
-					AmtToForward: amountToSend,
-					OutgoingTimeLock: uint32(
-						toNodeDist.incomingCltv,
-					),
-					LegacyPayload: !supportsTlv,
-				}
-
-				payloadSize = hop.PayloadSize(
-					edge.policy.ChannelID,
-				)
-			} else {
-				payloadSize = edge.hopPayloadSize
-			}
+			payloadSize = edge.hopPayloadSize(
+				amountToSend, uint32(
+					toNodeDist.incomingCltv,
+				), !supportsTlv, edge.policy.ChannelID,
+			)
 		}
 		log.Infof("IntermediaryHopPayloadSize: %v\n", payloadSize)
 
@@ -958,7 +946,7 @@ func findPath(g *graphParams, r *RestrictParams, cfg *PathFindingConfig,
 				reverseEdge.sourceNode,
 				reverseEdge.edge.EdgePolicy(),
 				fakeHopHintCapacity,
-				reverseEdge.edge.HopPayloadSize(),
+				reverseEdge.edge.HopPayloadSize,
 			)
 		}
 
