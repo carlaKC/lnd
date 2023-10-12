@@ -219,6 +219,10 @@ func (i *interpretedResult) processPaymentOutcomeFinal(
 		// destination correctly. Continue the payment process.
 		i.successPairRange(route, 0, n-1)
 
+	// Note that this default case intentionally includes invalid blinding
+	// errors from the receiving node. Introduction nodes in blinded
+	// routes where they are the receiving node are expected to return
+	// regular errors, and no other nodes should be returning this error.
 	default:
 		// All other errors are considered terminal if coming from the
 		// final hop. They indicate that something is wrong at the

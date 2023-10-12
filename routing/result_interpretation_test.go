@@ -89,6 +89,36 @@ var (
 			{PubKeyBytes: hops[3], AmtToForward: 58},
 		},
 	}
+
+	// blindedToIntro is a blinded path which does to an introduction
+	// node as a final hop with some preceding cleartext hops.
+	blindedToIntro = route.Route{
+		SourcePubKey: hops[0],
+		TotalAmount:  100,
+		Hops: []*route.Hop{
+			{PubKeyBytes: hops[1], AmtToForward: 95},
+			{PubKeyBytes: hops[2], AmtToForward: 90},
+			{
+				PubKeyBytes:   hops[3],
+				AmtToForward:  80,
+				BlindingPoint: blindingPoint,
+			},
+		},
+	}
+
+	// blindedSingleHop is a blinded path paying to the introduction
+	// node which is also a direct peers of our node.
+	blindedSingleHop = route.Route{
+		SourcePubKey: hops[0],
+		TotalAmount:  100,
+		Hops: []*route.Hop{
+			{
+				PubKeyBytes:   hops[1],
+				AmtToForward:  100,
+				BlindingPoint: blindingPoint,
+			},
+		},
+	}
 )
 
 func getTestPair(from, to int) DirectedNodePair {
@@ -479,6 +509,64 @@ var resultTestCases = []resultTestCase{
 				getTestPair(2, 1): failPairResult(0),
 			},
 			nodeFailure: &hops[1],
+		},
+	},
+	// Test invalid onion blinding from final node that is the introduction
+	// node.
+	{
+		name:          "final node blinded",
+		route:         &blindedToIntro,
+		failureSrcIdx: 3,
+		failure:       &lnwire.FailInvalidBlinding{},
+
+		expectedResult: &interpretedResult{
+			pairResults: map[DirectedNodePair]pairResult{
+				getTestPair(0, 1): successPairResult(100),
+				getTestPair(1, 2): successPairResult(95),
+				// Failures for failing hops[3].
+				getTestPair(2, 3): failPairResult(0),
+				getTestPair(3, 2): failPairResult(0),
+			},
+			nodeFailure:        &hops[3],
+			finalFailureReason: &reasonError,
+		},
+	},
+	// Test the case where a final node that is not in a blinded route
+	// returns an invalid onion blinding error and there was a successful
+	// hop before the error.
+	{
+		name:          "final unexpected blinding",
+		route:         &routeTwoHop,
+		failureSrcIdx: 2,
+		failure:       &lnwire.FailInvalidBlinding{},
+
+		expectedResult: &interpretedResult{
+			pairResults: map[DirectedNodePair]pairResult{
+				getTestPair(0, 1): successPairResult(100),
+				// Failures for failing hops[2].
+				getTestPair(1, 2): failPairResult(0),
+				getTestPair(2, 1): failPairResult(0),
+			},
+			nodeFailure:        &hops[2],
+			finalFailureReason: &reasonError,
+		},
+	},
+	// Test invalid onion blinding from the receiving introduction node
+	// where there is a shared channel between our node and the receiver.
+	{
+		name:          "single hop blinded",
+		route:         &blindedSingleHop,
+		failureSrcIdx: 1,
+		failure:       &lnwire.FailInvalidBlinding{},
+
+		expectedResult: &interpretedResult{
+			pairResults: map[DirectedNodePair]pairResult{
+				// Failures for failing hops[1].
+				getTestPair(0, 1): failPairResult(0),
+				getTestPair(1, 0): failPairResult(0),
+			},
+			nodeFailure:        &hops[1],
+			finalFailureReason: &reasonError,
 		},
 	},
 }
