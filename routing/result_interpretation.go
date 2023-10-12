@@ -394,6 +394,48 @@ func (i *interpretedResult) processPaymentOutcomeIntermediate(
 	case *lnwire.FailExpiryTooSoon:
 		reportAll()
 
+	// If FailInvalidBlinding is received, then there has been a failure
+	// within a blinded route. The introduction node is always responsible
+	// for reporting errors within a blinded route (to protect the privacy
+	// of members of the route), so it will always be the reporting node.
+	// We penalize all of the nodes _after_ the introduction point, so that
+	// the blinded route is penalized.
+	//
+	// The introduction node has no incentive to falsely report errors to
+	// sabotage the blinded route because:
+	//   1. Its ability to route this payment is strictly tied to the
+	//      blinded route.
+	//   2. The pubkeys in the blinded route are ephemeral, so doing so
+	//      will have no impact on the nodes beyond the individual payment.
+	//
+	// If a node that was *not* the introduction node in a blinded route
+	// reports this error code, we penalize the node because it's not
+	// supposed to be sending this error.
+	case *lnwire.FailInvalidBlinding:
+		// Penalize the failing node if it was not the introduction
+		// point of a blinded route.
+		if route.Hops[errorSourceIdx-1].BlindingPoint == nil {
+			// If there are any hops before the erring node, assign
+			// success to their pairs. We don't want to assign
+			// success to the incoming edge for the failing node,
+			// because it could have sent a blinding point to force
+			// this error (and we're about to penalize it).
+			if errorSourceIdx >= 2 {
+				i.successPairRange(route, 0, errorSourceIdx-1)
+			}
+
+			i.failNode(route, errorSourceIdx)
+
+			return
+		}
+
+		// Everything up until the error source forwarded the payment
+		// correctly.
+		i.successPairRange(route, 0, errorSourceIdx-1)
+		i.failPairRange(
+			route, errorSourceIdx, len(route.Hops)-1,
+		)
+
 	// In all other cases, we penalize the reporting node. These are all
 	// failures that should not happen.
 	default:
