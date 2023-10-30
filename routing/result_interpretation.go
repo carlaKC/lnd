@@ -164,6 +164,17 @@ func (i *interpretedResult) processPaymentOutcomeFinal(
 
 	n := len(route.Hops)
 
+	failNodeIdx := func(idx int) {
+		i.failNode(route, idx)
+
+		// Other channels in the route forwarded correctly.
+		if idx >= 2 {
+			i.successPairRange(route, 0, idx-2)
+		}
+
+		i.finalFailureReason = &reasonError
+	}
+
 	// If a failure from the final node is received, we will fail the
 	// payment in almost all cases. Only when the penultimate node sends an
 	// incorrect htlc, we want to retry via another route. Invalid onion
@@ -219,18 +230,11 @@ func (i *interpretedResult) processPaymentOutcomeFinal(
 		// destination correctly. Continue the payment process.
 		i.successPairRange(route, 0, n-1)
 
+	// All other errors are considered terminal if coming from the
+	// final hop. They indicate that something is wrong at the
+	// recipient, so we do apply a penalty.
 	default:
-		// All other errors are considered terminal if coming from the
-		// final hop. They indicate that something is wrong at the
-		// recipient, so we do apply a penalty.
-		i.failNode(route, n)
-
-		// Other channels in the route forwarded correctly.
-		if n >= 2 {
-			i.successPairRange(route, 0, n-2)
-		}
-
-		i.finalFailureReason = &reasonError
+		failNodeIdx(n)
 	}
 }
 
