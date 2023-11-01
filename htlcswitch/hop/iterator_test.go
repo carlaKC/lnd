@@ -73,6 +73,7 @@ func TestSphinxHopIteratorForwardingInstructions(t *testing.T) {
 					Type:    sphinx.PayloadTLV,
 					Payload: b.Bytes(),
 				},
+				Action: sphinx.MoreHops,
 			},
 			expectedFwdInfo: expectedFwdInfo,
 		},
