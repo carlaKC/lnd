@@ -197,6 +197,7 @@ func TestPayloadSize(t *testing.T) {
 			PubKeyBytes:      testPubKeyBytes,
 			AmtToForward:     1200,
 			OutgoingTimeLock: 700000,
+			ChannelID:        51784534844,
 			MPP:              record.NewMPP(500, [32]byte{}),
 			AMP: record.NewAMP(
 				[32]byte{}, [32]byte{}, 8,
