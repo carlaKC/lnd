@@ -356,6 +356,51 @@ var decodePayloadTests = []decodePayloadTest{
 		},
 		shouldHaveTotalAmt: true,
 	},
+	{
+		name:       "final blinded hop with total amount",
+		isFinalHop: true,
+		payload: []byte{
+			// amount
+			0x02, 0x00,
+			// cltv
+			0x04, 0x00,
+			// encrypted data
+			0x0a, 0x03, 0x03, 0x02, 0x01,
+		},
+		shouldHaveEncData: true,
+	},
+	{
+		name:       "final blinded missing amt",
+		isFinalHop: true,
+		payload: []byte{
+			// cltv
+			0x04, 0x00,
+			// encrypted data
+			0x0a, 0x03, 0x03, 0x02, 0x01,
+		},
+		shouldHaveBlinding: true,
+		expErr: hop.ErrInvalidPayload{
+			Type:      record.AmtOnionType,
+			Violation: hop.OmittedViolation,
+			FinalHop:  true,
+		},
+	},
+	{
+		name:       "final blinded missing cltv",
+		isFinalHop: true,
+		payload: []byte{
+			// amount
+			0x02, 0x00,
+			// encrypted data
+			0x0a, 0x03, 0x03, 0x02, 0x01,
+		},
+		shouldHaveBlinding: true,
+		expErr: hop.ErrInvalidPayload{
+			Type:      record.LockTimeOnionType,
+			Violation: hop.OmittedViolation,
+			FinalHop:  true,
+		},
+	},
 }
 
 // TestDecodeHopPayloadRecordValidation asserts that parsing the payloads in the
