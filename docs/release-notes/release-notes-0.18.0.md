@@ -125,16 +125,22 @@
 * [Bool was added](https://github.com/lightningnetwork/lnd/pull/8057) to the
   primitive type of the tlv package.
 
+<<<<<<< HEAD
 ## Misc
+=======
+>>>>>>> fe88fa7fc (docs: release notes)
 * [Added](https://github.com/lightningnetwork/lnd/pull/8142) full validation 
   for blinded path payloads to allow fuzzing before LND fully supports 
   blinded payment relay.
 
+<<<<<<< HEAD
 ### Logging
 * [Add the htlc amount](https://github.com/lightningnetwork/lnd/pull/8156) to
   contract court logs in case of timed-out htlcs in order to easily spot dust
   outputs.
 
+=======
+>>>>>>> fe88fa7fc (docs: release notes)
 ## RPC Updates
 
 * [Deprecated](https://github.com/lightningnetwork/lnd/pull/7175)
