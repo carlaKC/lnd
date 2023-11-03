@@ -65,6 +65,10 @@
 * [Bool was added](https://github.com/lightningnetwork/lnd/pull/8057) to the
   primitive type of the tlv package.
 
+* [Added](https://github.com/lightningnetwork/lnd/pull/8142) full validation 
+  for blinded path payloads to allow fuzzing before LND fully supports 
+  blinded payment relay.
+
 ## RPC Updates
 
 * [Deprecated](https://github.com/lightningnetwork/lnd/pull/7175)
