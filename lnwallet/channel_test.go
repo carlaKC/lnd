@@ -10221,8 +10221,9 @@ func createRandomHTLC(t *testing.T, incoming bool) channeldb.HTLC {
 	_, err = rand.Read(sig)
 	require.NoError(t, err)
 
-	extra := make([]byte, 1000)
-	_, err = rand.Read(extra)
+	blinding, err := pubkeyFromHex(
+		"0228f2af0abe322403480fb3ee172f7f1601e67d1da6cad40b54c4468d48236c39", //nolint:lll
+	)
 	require.NoError(t, err)
 
 	return channeldb.HTLC{
@@ -10235,7 +10236,7 @@ func createRandomHTLC(t *testing.T, incoming bool) channeldb.HTLC {
 		OnionBlob:     onionBlob,
 		HtlcIndex:     rand.Uint64(),
 		LogIndex:      rand.Uint64(),
-		ExtraData:     extra,
+		BlindingPoint: blinding,
 	}
 }
 
@@ -10801,4 +10802,44 @@ func TestEnforceFeeBuffer(t *testing.T) {
 	expectedAmt := aliceChannel.channelState.LocalCommitment.LocalBalance
 
 	require.Equal(t, aliceBalance, expectedAmt)
+}
+
+// TestBlindingPointPersistence tests persistence of blinding points attached
+// to htlcs across restarts.
+func TestBlindingPointPersistence(t *testing.T) {
+	// Create a test channel which will be used for the duration of this
+	// test. The channel will be funded evenly with Alice having 5 BTC,
+	// and Bob having 5 BTC.
+	aliceChannel, bobChannel, err := CreateTestChannels(
+		t, channeldb.SingleFunderTweaklessBit,
+	)
+	require.NoError(t, err, "unable to create test channels")
+
+	// Send a HTLC from Alice to Bob that has a blinding point populated.
+	htlc, _ := createHTLC(0, 100_000_000)
+	blinding, err := pubkeyFromHex(
+		"0228f2af0abe322403480fb3ee172f7f1601e67d1da6cad40b54c4468d48236c39", //nolint:lll
+	)
+	require.NoError(t, err)
+	htlc.BlindingPoint = lnwire.NewBlindingPoint(blinding)
+
+	_, err = aliceChannel.AddHTLC(htlc, nil)
+
+	require.NoError(t, err)
+	_, err = bobChannel.ReceiveHTLC(htlc)
+	require.NoError(t, err)
+
+	// Now, Alice will send a new commitment to Bob, which will persist our
+	// pending HTLC to disk.
+	_, err = aliceChannel.SignNextCommitment()
+	require.NoError(t, err, "unable to sign commitment")
+
+	// Restart alice to force fetching state from disk.
+	aliceChannel, err = restartChannel(aliceChannel)
+	require.NoError(t, err, "unable to restart alice")
+
+	// Assert that the blinding point is restored from disk.
+	remoteCommit := aliceChannel.remoteCommitChain.tip()
+	require.Len(t, remoteCommit.outgoingHTLCs, 1)
+	require.Equal(t, blinding, remoteCommit.outgoingHTLCs[0].BlindingPoint)
 }
