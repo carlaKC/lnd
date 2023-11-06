@@ -1542,9 +1542,21 @@ func TestHTLCsExtraData(t *testing.T) {
 		OnionBlob:     lnmock.MockOnion(),
 	}
 
+	// Add a blinding point to a htlc.
+	blindingPointHTLC := HTLC{
+		Signature:     testSig.Serialize(),
+		Incoming:      false,
+		Amt:           10,
+		RHash:         key,
+		RefundTimeout: 1,
+		OnionBlob:     lnmock.MockOnion(),
+	}
+	require.NoError(t, blindingPointHTLC.SetExtraData(pubKey))
+
 	testCases := []struct {
-		name  string
-		htlcs []HTLC
+		name        string
+		htlcs       []HTLC
+		blindingIdx int
 	}{
 		{
 			// Serialize multiple HLTCs with no extra data to
@@ -1554,21 +1566,15 @@ func TestHTLCsExtraData(t *testing.T) {
 			htlcs: []HTLC{
 				mockHtlc, mockHtlc,
 			},
+			blindingIdx: -1,
 		},
 		{
 			name: "mixed extra data",
 			htlcs: []HTLC{
 				mockHtlc,
-				{
-					Signature:     testSig.Serialize(),
-					Incoming:      false,
-					Amt:           10,
-					RHash:         key,
-					RefundTimeout: 1,
-					OnionBlob:     lnmock.MockOnion(),
-					ExtraData:     []byte{1, 2, 3},
-				},
+				blindingPointHTLC,
 				mockHtlc,
+				// Include a HTLC with nonsense extra data.
 				{
 					Signature:     testSig.Serialize(),
 					Incoming:      false,
@@ -1581,6 +1587,7 @@ func TestHTLCsExtraData(t *testing.T) {
 					),
 				},
 			},
+			blindingIdx: 1,
 		},
 	}
 
@@ -1598,6 +1605,19 @@ func TestHTLCsExtraData(t *testing.T) {
 			htlcs, err := DeserializeHtlcs(r)
 			require.NoError(t, err)
 			require.Equal(t, testCase.htlcs, htlcs)
+
+			// Only check blinding point if we need to.
+			if testCase.blindingIdx < 0 {
+				return
+			}
+
+			// Ensure that our blinding index is sane, it'll
+			// always be greater because we're using zero index.
+			require.Greater(t, len(htlcs), testCase.blindingIdx)
+			blindedHTLC := htlcs[testCase.blindingIdx]
+			actualBlinding, err := blindedHTLC.BlindingPoint()
+			require.NoError(t, err)
+			require.Equal(t, pubKey, actualBlinding)
 		})
 	}
 }
@@ -1628,4 +1648,27 @@ func TestOnionBlobIncorrectLength(t *testing.T) {
 
 	_, err := DeserializeHtlcs(&b)
 	require.ErrorIs(t, err, ErrOnionBlobLength)
+}
+
+// TestBlindingPoint tests packing and unpacking of a blinding point into our
+// extra htlc data.
+func TestBlindingPoint(t *testing.T) {
+	// We don't actually need any data on the HTLC because we're just
+	// testing packing of the blinding point.
+	htlc := HTLC{}
+
+	// Assert that a nil blinding point is a no-op.
+	require.NoError(t, htlc.SetExtraData(nil))
+	require.Nil(t, htlc.ExtraData)
+
+	// Set a non-nil blinding point and assert that it's packed into our
+	// extra data.
+	blindingPoint := pubKey
+	require.NoError(t, htlc.SetExtraData(blindingPoint))
+	require.NotNil(t, htlc.ExtraData)
+
+	// Extract blinding point from extra data and assert that it matches.
+	actualBlinding, err := htlc.BlindingPoint()
+	require.NoError(t, err)
+	require.Equal(t, blindingPoint, actualBlinding)
 }

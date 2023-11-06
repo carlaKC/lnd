@@ -2224,6 +2224,58 @@ type HTLC struct {
 	ExtraData []byte
 }
 
+// SetExtraData encodes a TLV stream of extra data to be stored with a HTLC.
+// It uses the update_add_htlc TLV types, because this is where extra data is
+// passed with a HTLC. At present blinding points are the only extra data that
+// we will store, and the function is a no-op if a nil blinding point is
+// provided.
+func (h *HTLC) SetExtraData(blindingPoint *btcec.PublicKey) error {
+	if blindingPoint == nil {
+		return nil
+	}
+
+	stream, err := tlv.NewStream(
+		tlv.MakePrimitiveRecord(
+			lnwire.BlindingPointRecordType, &blindingPoint,
+		),
+	)
+	if err != nil {
+		return err
+	}
+
+	var b bytes.Buffer
+	if err := stream.Encode(&b); err != nil {
+		return err
+	}
+	h.ExtraData = b.Bytes()
+
+	return nil
+}
+
+// BlindingPoint returns a blinding point if one is stored in the extra data
+// field of the HTLC, or nil if one is not set.
+func (h *HTLC) BlindingPoint() (*btcec.PublicKey, error) {
+	if len(h.ExtraData) == 0 {
+		return nil, nil
+	}
+
+	var blindingPoint *btcec.PublicKey
+	stream, err := tlv.NewStream(
+		tlv.MakePrimitiveRecord(
+			lnwire.BlindingPointRecordType, &blindingPoint,
+		),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := stream.Decode(bytes.NewBuffer(h.ExtraData)); err != nil {
+		return nil, err
+	}
+
+	return blindingPoint, nil
+}
+
 // SerializeHtlcs writes out the passed set of HTLC's into the passed writer
 // using the current default on-disk serialization format.
 //
