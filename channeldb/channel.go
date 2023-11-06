@@ -2311,6 +2311,66 @@ type HTLC struct {
 	// legacy reasons, see serialization/deserialization functions for
 	// detail.
 	ExtraData []byte
+
+	// BlindingPoint is an optional blinding point included with the HTLC.
+	//
+	// Note: this field is not a part of on-disk representation of the
+	// HTLC. It is stored in the ExtraData field, which is used to store
+	// a TLV stream of additional information associated with the HTLC.
+	BlindingPoint *btcec.PublicKey
+}
+
+// serializeExtraData encodes a TLV stream of extra data to be stored with a
+// HTLC. It uses the update_add_htlc TLV types, because this is where extra
+// data is passed with a HTLC. At present blinding points are the only extra
+// data that we will store, and the function is a no-op if a nil blinding
+// point is provided.
+//
+// This function MUST be called to persist all HTLC values when they are
+// serialized.
+func (h *HTLC) serializeExtraData() error {
+	if h.BlindingPoint == nil {
+		return nil
+	}
+
+	stream, err := tlv.NewStream(
+		tlv.MakePrimitiveRecord(
+			lnwire.BlindingPointRecordType, &h.BlindingPoint,
+		),
+	)
+	if err != nil {
+		return err
+	}
+
+	var b bytes.Buffer
+	if err := stream.Encode(&b); err != nil {
+		return err
+	}
+	h.ExtraData = b.Bytes()
+
+	return nil
+}
+
+// deserializeExtraData extracts TLVs from the extra data persisted for the
+// htlc and populates values in the struct accordingly.
+//
+// This function MUST be called to populate the struct properly when HTLCs
+// are deserialized.
+func (h *HTLC) deserializeExtraData() error {
+	if len(h.ExtraData) == 0 {
+		return nil
+	}
+
+	stream, err := tlv.NewStream(
+		tlv.MakePrimitiveRecord(
+			lnwire.BlindingPointRecordType, &h.BlindingPoint,
+		),
+	)
+	if err != nil {
+		return nil
+	}
+
+	return stream.Decode(bytes.NewBuffer(h.ExtraData))
 }
 
 // SerializeHtlcs writes out the passed set of HTLC's into the passed writer
@@ -2334,6 +2394,12 @@ func SerializeHtlcs(b io.Writer, htlcs ...HTLC) error {
 	}
 
 	for _, htlc := range htlcs {
+		// Populate TLV stream for any additional fields contained
+		// in the TLV.
+		if err := htlc.serializeExtraData(); err != nil {
+			return err
+		}
+
 		// The onion blob and hltc data are stored as a single var
 		// bytes blob.
 		onionAndExtraData := make(
@@ -2418,6 +2484,12 @@ func DeserializeHtlcs(r io.Reader) ([]HTLC, error) {
 				htlcs[i].ExtraData,
 				onionAndExtraData[lnwire.OnionPacketSize:],
 			)
+		}
+
+		// Finally, deserialize any TLVs contained in that extra data
+		// if they are present.
+		if err := htlcs[i].deserializeExtraData(); err != nil {
+			return nil, err
 		}
 	}
 
