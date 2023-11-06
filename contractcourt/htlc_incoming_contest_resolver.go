@@ -520,9 +520,14 @@ func (h *htlcIncomingContestResolver) Supplement(htlc channeldb.HTLC) {
 func (h *htlcIncomingContestResolver) decodePayload() (*hop.Payload,
 	[]byte, error) {
 
+	blindingPoint, err := h.htlc.BlindingPoint()
+	if err != nil {
+		return nil, nil, err
+	}
+
 	onionReader := bytes.NewReader(h.htlc.OnionBlob[:])
 	iterator, err := h.OnionProcessor.ReconstructHopIterator(
-		onionReader, h.htlc.RHash[:],
+		onionReader, h.htlc.RHash[:], blindingPoint,
 	)
 	if err != nil {
 		return nil, nil, err
