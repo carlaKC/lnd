@@ -522,7 +522,7 @@ func (h *htlcIncomingContestResolver) decodePayload() (*hop.Payload,
 
 	onionReader := bytes.NewReader(h.htlc.OnionBlob[:])
 	iterator, err := h.OnionProcessor.ReconstructHopIterator(
-		onionReader, h.htlc.RHash[:],
+		onionReader, h.htlc.RHash[:], h.htlc.BlindingPoint,
 	)
 	if err != nil {
 		return nil, nil, err
