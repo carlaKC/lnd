@@ -396,6 +396,12 @@ type PaymentDescriptor struct {
 	// isForwarded denotes if an incoming HTLC has been forwarded to any
 	// possible upstream peers in the route.
 	isForwarded bool
+
+	// BlindingPoint is an optional ephemeral key used in route blinding.
+	// This value is set for nodes that are relaying payments inside of a
+	// blinded route (ie, not the introduction node) from update_add_htlc's
+	// TLVs.
+	BlindingPoint *btcec.PublicKey
 }
 
 // PayDescsFromRemoteLogUpdates converts a slice of LogUpdates received from the
@@ -436,6 +442,7 @@ func PayDescsFromRemoteLogUpdates(chanID lnwire.ShortChannelID, height uint64,
 					Height: height,
 					Index:  uint16(i),
 				},
+				BlindingPoint: wireMsg.BlindingPoint.Pubkey(),
 			}
 			pd.OnionBlob = make([]byte, len(wireMsg.OnionBlob))
 			copy(pd.OnionBlob[:], wireMsg.OnionBlob[:])
@@ -727,7 +734,9 @@ func (c *commitment) populateHtlcIndexes(chanType channeldb.ChannelType,
 
 // toDiskCommit converts the target commitment into a format suitable to be
 // written to disk after an accepted state transition.
-func (c *commitment) toDiskCommit(ourCommit bool) *channeldb.ChannelCommitment {
+func (c *commitment) toDiskCommit(ourCommit bool) (
+	*channeldb.ChannelCommitment, error) {
+
 	numHtlcs := len(c.outgoingHTLCs) + len(c.incomingHTLCs)
 
 	commit := &channeldb.ChannelCommitment{
@@ -761,6 +770,9 @@ func (c *commitment) toDiskCommit(ourCommit bool) *channeldb.ChannelCommitment {
 			Incoming:      false,
 		}
 		copy(h.OnionBlob[:], htlc.OnionBlob)
+		if err := h.SetExtraData(htlc.BlindingPoint); err != nil {
+			return nil, err
+		}
 
 		if ourCommit && htlc.sig != nil {
 			h.Signature = htlc.sig.Serialize()
@@ -785,6 +797,9 @@ func (c *commitment) toDiskCommit(ourCommit bool) *channeldb.ChannelCommitment {
 			Incoming:      true,
 		}
 		copy(h.OnionBlob[:], htlc.OnionBlob)
+		if err := h.SetExtraData(htlc.BlindingPoint); err != nil {
+			return nil, err
+		}
 
 		if ourCommit && htlc.sig != nil {
 			h.Signature = htlc.sig.Serialize()
@@ -793,7 +808,7 @@ func (c *commitment) toDiskCommit(ourCommit bool) *channeldb.ChannelCommitment {
 		commit.Htlcs = append(commit.Htlcs, h)
 	}
 
-	return commit
+	return commit, nil
 }
 
 // diskHtlcToPayDesc converts an HTLC previously written to disk within a
@@ -882,6 +897,12 @@ func (lc *LightningChannel) diskHtlcToPayDesc(feeRate chainfee.SatPerKWeight,
 		ourWitnessScript:   ourWitnessScript,
 		theirPkScript:      theirP2WSH,
 		theirWitnessScript: theirWitnessScript,
+	}
+
+	var err error
+	pd.BlindingPoint, err = htlc.BlindingPoint()
+	if err != nil {
+		return pd, err
 	}
 
 	return pd, nil
@@ -1588,6 +1609,7 @@ func (lc *LightningChannel) logUpdateToPayDesc(logUpdate *channeldb.LogUpdate,
 			HtlcIndex:             wireMsg.ID,
 			LogIndex:              logUpdate.LogIndex,
 			addCommitHeightRemote: commitHeight,
+			BlindingPoint:         wireMsg.BlindingPoint.Pubkey(),
 		}
 		pd.OnionBlob = make([]byte, len(wireMsg.OnionBlob))
 		copy(pd.OnionBlob[:], wireMsg.OnionBlob[:])
@@ -1785,6 +1807,7 @@ func (lc *LightningChannel) remoteLogUpdateToPayDesc(logUpdate *channeldb.LogUpd
 			HtlcIndex:            wireMsg.ID,
 			LogIndex:             logUpdate.LogIndex,
 			addCommitHeightLocal: commitHeight,
+			BlindingPoint:        wireMsg.BlindingPoint.Pubkey(),
 		}
 		pd.OnionBlob = make([]byte, len(wireMsg.OnionBlob))
 		copy(pd.OnionBlob, wireMsg.OnionBlob[:])
@@ -3714,7 +3737,10 @@ func (lc *LightningChannel) createCommitDiff(
 	// With the set of log updates mapped into wire messages, we'll now
 	// convert the in-memory commit into a format suitable for writing to
 	// disk.
-	diskCommit := newCommit.toDiskCommit(false)
+	diskCommit, err := newCommit.toDiskCommit(false)
+	if err != nil {
+		return nil, err
+	}
 
 	return &channeldb.CommitDiff{
 		Commitment: *diskCommit,
@@ -3782,6 +3808,9 @@ func (lc *LightningChannel) getUnsignedAckedUpdates() []channeldb.LogUpdate {
 				Amount:      pd.Amount,
 				Expiry:      pd.Timeout,
 				PaymentHash: pd.RHash,
+				BlindingPoint: lnwire.NewBlindingPoint(
+					pd.BlindingPoint,
+				),
 			}
 			copy(htlc.OnionBlob[:], pd.OnionBlob)
 			logUpdate.UpdateMsg = htlc
@@ -5560,8 +5589,10 @@ func (lc *LightningChannel) RevokeCurrentCommitment() (*lnwire.RevokeAndAck,
 	// Additionally, generate a channel delta for this state transition for
 	// persistent storage.
 	chainTail := lc.localCommitChain.tail()
-	newCommitment := chainTail.toDiskCommit(true)
-
+	newCommitment, err := chainTail.toDiskCommit(true)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	// Get the unsigned acked remotes updates that are currently in memory.
 	// We need them after a restart to sync our remote commitment with what
 	// is committed locally.
@@ -6087,6 +6118,7 @@ func (lc *LightningChannel) htlcAddDescriptor(htlc *lnwire.UpdateAddHTLC,
 		HtlcIndex:      lc.localUpdateLog.htlcCounter,
 		OnionBlob:      htlc.OnionBlob[:],
 		OpenCircuitKey: openKey,
+		BlindingPoint:  htlc.BlindingPoint.Pubkey(),
 	}
 }
 
@@ -6137,13 +6169,14 @@ func (lc *LightningChannel) ReceiveHTLC(htlc *lnwire.UpdateAddHTLC) (uint64, err
 	}
 
 	pd := &PaymentDescriptor{
-		EntryType: Add,
-		RHash:     PaymentHash(htlc.PaymentHash),
-		Timeout:   htlc.Expiry,
-		Amount:    htlc.Amount,
-		LogIndex:  lc.remoteUpdateLog.logIndex,
-		HtlcIndex: lc.remoteUpdateLog.htlcCounter,
-		OnionBlob: htlc.OnionBlob[:],
+		EntryType:     Add,
+		RHash:         PaymentHash(htlc.PaymentHash),
+		Timeout:       htlc.Expiry,
+		Amount:        htlc.Amount,
+		LogIndex:      lc.remoteUpdateLog.logIndex,
+		HtlcIndex:     lc.remoteUpdateLog.htlcCounter,
+		OnionBlob:     htlc.OnionBlob[:],
+		BlindingPoint: htlc.BlindingPoint.Pubkey(),
 	}
 
 	localACKedIndex := lc.remoteCommitChain.tail().ourMessageIndex
