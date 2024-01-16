@@ -432,9 +432,11 @@ func (s *Server) SendToRouteV2(ctx context.Context,
 	// case, we give precedence to the attempt information as stored in the
 	// db.
 	if req.SkipTempErr {
-		attempt, err = s.cfg.Router.SendToRouteSkipTempErr(hash, route)
+		attempt, err = s.cfg.Router.SendToRouteSkipTempErr(
+			hash, false, route,
+		)
 	} else {
-		attempt, err = s.cfg.Router.SendToRoute(hash, route)
+		attempt, err = s.cfg.Router.SendToRoute(hash, false, route)
 	}
 	if attempt != nil {
 		rpcAttempt, err := s.cfg.RouterBackend.MarshalHTLCAttempt(
