@@ -1356,6 +1356,15 @@
         }
       }
     },
+    "routerrpcHTLCEndorsement": {
+      "type": "string",
+      "enum": [
+        "ENDORSEMENT_UNKNOWN",
+        "ENDORSEMENT_TRUE",
+        "ENDORSEMENT_FALSE"
+      ],
+      "default": "ENDORSEMENT_UNKNOWN"
+    },
     "routerrpcHtlcEvent": {
       "type": "object",
       "properties": {
@@ -1789,6 +1798,10 @@
           "type": "number",
           "format": "double",
           "description": "The time preference for this payment. Set to -1 to optimize for fees\nonly, to 1 to optimize for reliability only or a value inbetween for a mix."
+        },
+        "endorsed": {
+          "$ref": "#/definitions/routerrpcHTLCEndorsement",
+          "description": "EXPERIMENTAL: Field may be subject to change.\n\nSignals whether to endorse the outgoing payment."
         }
       }
     },

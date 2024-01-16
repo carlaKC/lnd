@@ -171,6 +171,12 @@ service Router {
         returns (UpdateChanStatusResponse);
 }
 
+enum HTLCEndorsement {
+    ENDORSEMENT_UNKNOWN = 0;
+    ENDORSEMENT_TRUE = 1;
+    ENDORSEMENT_FALSE = 2;
+}
+
 message SendPaymentRequest {
     // The identity pubkey of the payment recipient
     bytes dest = 1;
@@ -320,6 +326,13 @@ message SendPaymentRequest {
     only, to 1 to optimize for reliability only or a value inbetween for a mix.
     */
     double time_pref = 23;
+
+    /*
+    EXPERIMENTAL: Field may be subject to change.
+
+    Signals whether to endorse the outgoing payment.
+    */
+    HTLCEndorsement endorsed = 24;
 }
 
 message TrackPaymentRequest {
