@@ -304,6 +304,9 @@ type InterceptedPacket struct {
 	// IncomingAmount is the amount of the accepted htlc.
 	IncomingAmount lnwire.MilliSatoshi
 
+	// IncomingEndorsed indicates whether the incoming htlc was endorsed.
+	IncomingEndorsed bool
+
 	// CustomRecords are user-defined records in the custom type range that
 	// were included in the payload.
 	CustomRecords record.CustomSet

@@ -921,7 +921,10 @@ message ForwardHtlcInterceptRequest {
     // The outgoing htlc expiry.
     uint32 outgoing_expiry = 4;
 
-    // Any custom records that were present in the payload.
+    /*
+    Any custom records that were present in the payload, as supplied by the
+    original sender of the HTLC.
+    */
     map<uint64, bytes> custom_records = 8;
 
     // The onion blob for the next hop
@@ -930,6 +933,15 @@ message ForwardHtlcInterceptRequest {
     // The block height at which this htlc will be auto-failed to prevent the
     // channel from force-closing.
     int32 auto_fail_height = 10;
+
+    /*
+    EXPERIMENTAL: Field may be subject to change.
+
+    Whether the incoming peer endorsed the HTLC. This value will also be false
+    if no endorsement signal is present, or LND has restarted since the HTLC
+    was committed to the incoming link.
+    */
+    HTLCEndorsement endorsed = 11;
 }
 
 /**

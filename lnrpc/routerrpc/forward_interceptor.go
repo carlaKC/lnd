@@ -93,6 +93,12 @@ func (r *forwardInterceptor) onIntercept(
 		AutoFailHeight:          htlc.AutoFailHeight,
 	}
 
+	if htlc.IncomingEndorsed {
+		interceptionRequest.Endorsed = HTLCEndorsement_ENDORSEMENT_TRUE
+	} else {
+		interceptionRequest.Endorsed = HTLCEndorsement_ENDORSEMENT_FALSE //nolint:lll
+	}
+
 	return r.stream.Send(interceptionRequest)
 }
 

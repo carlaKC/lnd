@@ -1305,7 +1305,7 @@
             "type": "string",
             "format": "byte"
           },
-          "description": "Any custom records that were present in the payload."
+          "description": "Any custom records that were present in the payload, as supplied by the\noriginal sender of the HTLC."
         },
         "onion_blob": {
           "type": "string",
@@ -1316,6 +1316,10 @@
           "type": "integer",
           "format": "int32",
           "description": "The block height at which this htlc will be auto-failed to prevent the\nchannel from force-closing."
+        },
+        "endorsed": {
+          "$ref": "#/definitions/routerrpcHTLCEndorsement",
+          "description": "EXPERIMENTAL: Field may be subject to change.\n\nWhether the incoming peer endorsed the HTLC. This value will also be false\nif no endorsement signal is present, or LND has restarted since the HTLC\nwas committed to the incoming link."
         }
       }
     },
