@@ -126,6 +126,9 @@ type FwdResolution struct {
 	// FailureCode is the failure code that is to be passed back to the
 	// sender if action is FwdActionFail.
 	FailureCode lnwire.FailCode
+
+	// Endorsed is an optional endorsement signal.
+	Endorsed *bool
 }
 
 type fwdResolution struct {
@@ -356,7 +359,7 @@ func (s *InterceptableSwitch) setInterceptor(interceptor ForwardInterceptor) {
 	log.Infof("Interceptor disconnected, resolving held packets")
 
 	s.heldHtlcSet.popAll(func(fwd InterceptedForward) {
-		err := fwd.Resume()
+		err := fwd.Resume(nil)
 		if err != nil {
 			log.Errorf("Failed to resume hold forward %v", err)
 		}
@@ -371,7 +374,7 @@ func (s *InterceptableSwitch) resolve(res *FwdResolution) error {
 
 	switch res.Action {
 	case FwdActionResume:
-		return intercepted.Resume()
+		return intercepted.Resume(res.Endorsed)
 
 	case FwdActionSettle:
 		return intercepted.Settle(res.Preimage)
@@ -579,6 +582,9 @@ func (s *InterceptableSwitch) handleExpired(fwd *interceptedForward) (
 	return true, nil
 }
 
+// Compile time check that interceptedForward implements InterceptedForward.
+var _ InterceptedForward = (*interceptedForward)(nil)
+
 // interceptedForward implements the InterceptedForward interface.
 // It is passed from the switch to external interceptors that are interested
 // in holding forwards and resolve them manually.
@@ -614,7 +620,13 @@ func (f *interceptedForward) Packet() InterceptedPacket {
 }
 
 // Resume resumes the default behavior as if the packet was not intercepted.
-func (f *interceptedForward) Resume() error {
+// UpdateAddTLVs can optionally be provided to pack additional custom TLV
+// records into the UpdateAddHTLC message that is forwarded.
+func (f *interceptedForward) Resume(endorse *bool) error {
+	if endorse != nil {
+		f.updateAddHTLC.Endorsed = lnwire.EndorsementSignal(*endorse)
+	}
+
 	// Forward to the switch. A link quit channel isn't needed, because we
 	// are on a different thread now.
 	return f.htlcSwitch.ForwardPackets(nil, f.packet)

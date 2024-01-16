@@ -966,6 +966,15 @@ message ForwardHtlcInterceptResponse {
     // For backwards-compatibility reasons, TEMPORARY_CHANNEL_FAILURE is the
     // default value for this field.
     lnrpc.Failure.FailureCode failure_code = 5;
+
+    /*
+    EXPERIMENTAL: Field may be subject to change.
+
+    An optional endorsement signal for the HTLC. LND will copy the value
+    received by the incoming link if this value is not set. Should only be
+    set for HTLC resumes.
+    */
+    HTLCEndorsement endorsed = 6;
 }
 
 enum ResolveHoldForwardAction {
