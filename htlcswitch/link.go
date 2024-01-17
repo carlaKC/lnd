@@ -3107,6 +3107,12 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 					Expiry:      fwdInfo.OutgoingCTLV,
 					Amount:      fwdInfo.AmountToForward,
 					PaymentHash: pd.RHash,
+					// Note: we simply copy endorsement
+					// signal from the incoming link to
+					// propagate the experimental signal.
+					Endorsed: lnwire.EndorsementSignal(
+						pd.IncomingEndorsed,
+					),
 				}
 
 				// Finally, we'll encode the onion packet for
@@ -3149,6 +3155,12 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				Expiry:      fwdInfo.OutgoingCTLV,
 				Amount:      fwdInfo.AmountToForward,
 				PaymentHash: pd.RHash,
+				// Note: we simply copy endorsement signal
+				// from the incoming link to propagate the
+				// experimental signal.
+				Endorsed: lnwire.EndorsementSignal(
+					pd.IncomingEndorsed,
+				),
 			}
 
 			// Finally, we'll encode the onion packet for the
