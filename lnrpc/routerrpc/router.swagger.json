@@ -1820,6 +1820,10 @@
         "skip_temp_err": {
           "type": "boolean",
           "description": "Whether the payment should be marked as failed when a temporary error is\nreturned from the given route. Set it to true so the payment won't be\nfailed unless a terminal error is occurred, such as payment timeout, no\nroutes, incorrect payment details, or insufficient funds."
+        },
+        "endorsed": {
+          "$ref": "#/definitions/routerrpcHTLCEndorsement",
+          "description": "EXPERIMENTAL: Field may be subject to change.\n\nSignals whether to endorse the outgoing payment."
         }
       }
     },

@@ -395,6 +395,13 @@ message SendToRouteRequest {
     routes, incorrect payment details, or insufficient funds.
     */
     bool skip_temp_err = 3;
+
+    /*
+    EXPERIMENTAL: Field may be subject to change.
+
+    Signals whether to endorse the outgoing payment.
+    */
+    HTLCEndorsement endorsed = 4;
 }
 
 message SendToRouteResponse {

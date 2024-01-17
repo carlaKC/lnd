@@ -423,7 +423,10 @@ func (s *Server) SendToRouteV2(ctx context.Context,
 		return nil, err
 	}
 
-	var attempt *channeldb.HTLCAttempt
+	var (
+		attempt  *channeldb.HTLCAttempt
+		endorsed = extractHTLCEndorsement(req.Endorsed)
+	)
 
 	// Pass route to the router. This call returns the full htlc attempt
 	// information as it is stored in the database. It is possible that both
@@ -433,10 +436,10 @@ func (s *Server) SendToRouteV2(ctx context.Context,
 	// db.
 	if req.SkipTempErr {
 		attempt, err = s.cfg.Router.SendToRouteSkipTempErr(
-			hash, false, route,
+			hash, endorsed, route,
 		)
 	} else {
-		attempt, err = s.cfg.Router.SendToRoute(hash, false, route)
+		attempt, err = s.cfg.Router.SendToRoute(hash, endorsed, route)
 	}
 	if attempt != nil {
 		rpcAttempt, err := s.cfg.RouterBackend.MarshalHTLCAttempt(
