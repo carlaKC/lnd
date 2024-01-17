@@ -11,6 +11,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc/routerrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/node"
+	"github.com/lightningnetwork/lnd/lntest/rpc"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -512,4 +513,109 @@ func (c *interceptorTestScenario) buildRoute(amtMsat int64,
 	routeResp := c.alice.RPC.BuildRoute(req)
 
 	return routeResp.Route
+}
+
+// testHTLCEndorsement tests the interceptor's ability to modify endorsement 
+// signals on HTLCs, testing that intercepted alterations are correctly 
+// propagated to the receiving node.
+func testHTLCEndorsement(ht *lntest.HarnessTest) {
+	ts := newInterceptorTestScenario(ht)
+	alice, bob, carol, dave := ts.alice, ts.bob, ts.carol, ts.dave
+
+	// Open and wait for channels.
+	const chanAmt = btcutil.Amount(300000)
+	p := lntest.OpenChannelParams{Amt: chanAmt}
+	reqs := []*lntest.OpenChannelRequest{
+		{Local: alice, Remote: bob, Param: p},
+		{Local: bob, Remote: carol, Param: p},
+		{Local: carol, Remote: dave, Param: p},
+	}
+	resp := ht.OpenMultiChannelsAsync(reqs)
+	cpAB, cpBC, cpCD := resp[0], resp[1], resp[2]
+
+	// Make sure Alice is aware of all channels.
+	ht.AssertTopologyChannelOpen(alice, cpAB)
+	ht.AssertTopologyChannelOpen(alice, cpBC)
+	ht.AssertTopologyChannelOpen(alice, cpCD)
+
+	// Connect the bobInterceptor.
+	bobInterceptor, cancelBob := bob.RPC.HtlcInterceptor()
+	defer cancelBob()
+
+	// Subscribe to the interceptor for Carol so that we can see the
+	// HTLC that is forwarded on by Bob with correct values.
+	carolInterceptor, cancelCarol := carol.RPC.HtlcInterceptor()
+	defer cancelCarol()
+
+	invReq := &lnrpc.Invoice{ValueMsat: 1000}
+	addResponse := dave.RPC.AddInvoice(invReq)
+
+	// Send an endorsed payment from Alice to Dave.
+	paymentClient := alice.RPC.SendPayment(&routerrpc.SendPaymentRequest{
+		PaymentRequest:    addResponse.PaymentRequest,
+		NoInflightUpdates: true,
+		TimeoutSeconds:    120,
+		Endorsed:          routerrpc.HTLCEndorsement_ENDORSEMENT_TRUE,
+		FeeLimitMsat:      noFeeLimitMsat,
+	})
+
+	// Assert that Bob receives an endorsed HTLC, and drop the endorsement
+	// signal on the outgoing link.
+	interceptAndCheckEndorsed(
+		ht,
+		bobInterceptor,
+		routerrpc.HTLCEndorsement_ENDORSEMENT_TRUE,
+		routerrpc.HTLCEndorsement_ENDORSEMENT_FALSE,
+	)
+
+	// Assert that Carol receives the HTLC with the endorsement signal
+	// dropped, and take no action to set her outgoing value.
+	interceptAndCheckEndorsed(
+		ht,
+		carolInterceptor,
+		routerrpc.HTLCEndorsement_ENDORSEMENT_FALSE,
+		routerrpc.HTLCEndorsement_ENDORSEMENT_UNKNOWN,
+	)
+
+	pmt, err := paymentClient.Recv()
+	require.NoError(ht, err)
+
+	require.Equal(ht, lnrpc.Payment_SUCCEEDED, pmt.Status)
+
+	// Finally, close channels.
+	ht.CloseChannel(alice, cpAB)
+	ht.CloseChannel(bob, cpBC)
+	ht.CloseChannel(carol, cpCD)
+}
+
+func interceptAndCheckEndorsed(ht *lntest.HarnessTest,
+	interceptor rpc.InterceptorClient, incomingEndorsed,
+	outgoingEndorsed routerrpc.HTLCEndorsement) {
+
+	respChan := make(chan *routerrpc.ForwardHtlcInterceptRequest, 1)
+	go func() {
+		defer close(respChan)
+
+		request, err := interceptor.Recv()
+		require.NoError(ht, err)
+
+		respChan <- request
+	}()
+
+	var request *routerrpc.ForwardHtlcInterceptRequest
+	select {
+	case request = <-respChan:
+		require.NotNil(ht, request)
+		require.Equal(ht, incomingEndorsed, request.Endorsed)
+
+	case <-time.After(defaultTimeout):
+		ht.Fatal("timeout waiting for interceptor")
+	}
+
+	err := interceptor.Send(&routerrpc.ForwardHtlcInterceptResponse{
+		IncomingCircuitKey: request.IncomingCircuitKey,
+		Action:             routerrpc.ResolveHoldForwardAction_RESUME,
+		Endorsed:           outgoingEndorsed,
+	})
+	require.NoError(ht, err, "interceptor resume request")
 }
