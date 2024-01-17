@@ -215,6 +215,9 @@ func testForwardInterceptorBasic(ht *lntest.HarnessTest) {
 	// Connect the interceptor.
 	interceptor, cancelInterceptor := bob.RPC.HtlcInterceptor()
 
+	// Connect Carol's interceptor.
+	carolInterceptor, cancelCarol := carol.RPC.HtlcInterceptor()
+
 	// Prepare the test cases.
 	testCases := ts.prepareTestCases()
 
@@ -262,13 +265,46 @@ func testForwardInterceptorBasic(ht *lntest.HarnessTest) {
 		}
 
 		// For all other packets we resolve according to the test case.
+		// We do not set any explicit endorsement signal on the
+		// interceptor response.
 		err := interceptor.Send(&routerrpc.ForwardHtlcInterceptResponse{
 			IncomingCircuitKey: request.IncomingCircuitKey,
 			Action:             tc.interceptorAction,
 			Preimage:           tc.invoice.RPreimage,
 		})
 		require.NoError(ht, err, "failed to send request")
+
+		// If the HTLC was resumed by bob, assert that Carol receives
+		// the HTLC with the appropriate endorsement signal.
+		if tc.interceptorAction !=
+			routerrpc.ResolveHoldForwardAction_RESUME {
+
+			continue
+		}
+
+		// Assert that the positive endorsement signal is propagated
+		// passively along the route.
+		carolHTLC := ht.ReceiveHtlcInterceptor(carolInterceptor)
+		require.Equal(
+			ht, routerrpc.HTLCEndorsement_ENDORSEMENT_TRUE,
+			carolHTLC.Endorsed,
+		)
+
+		// Once we've checked this value, just resume so that the HTLC
+		// will proceed as before.
+		err = carolInterceptor.Send(
+			//nolint:lll
+			&routerrpc.ForwardHtlcInterceptResponse{
+				IncomingCircuitKey: carolHTLC.IncomingCircuitKey,
+				Action:             routerrpc.ResolveHoldForwardAction_RESUME,
+			},
+		)
+		require.NoError(ht, err, "carol interceptor send")
 	}
+
+	// Once we've checked the HTLC carol received, we can cancel her
+	// interceptor.
+	cancelCarol()
 
 	// At this point we are left with the held packets, we want to make
 	// sure each one of them has a corresponding 'in-flight' payment at
@@ -454,10 +490,11 @@ func (c *interceptorTestScenario) sendPaymentAndAssertAction(
 		customTestKey: customTestValue,
 	}
 
-	// Send the payment.
+	// Send the payment, endorsing the outgoing htlc.
 	sendReq := &routerrpc.SendToRouteRequest{
 		PaymentHash: tc.invoice.RHash,
 		Route:       route,
+		Endorsed:    routerrpc.HTLCEndorsement_ENDORSEMENT_TRUE,
 	}
 
 	return c.alice.RPC.SendToRouteV2(sendReq)
@@ -515,8 +552,8 @@ func (c *interceptorTestScenario) buildRoute(amtMsat int64,
 	return routeResp.Route
 }
 
-// testHTLCEndorsement tests the interceptor's ability to modify endorsement 
-// signals on HTLCs, testing that intercepted alterations are correctly 
+// testHTLCEndorsement tests the interceptor's ability to modify endorsement
+// signals on HTLCs, testing that intercepted alterations are correctly
 // propagated to the receiving node.
 func testHTLCEndorsement(ht *lntest.HarnessTest) {
 	ts := newInterceptorTestScenario(ht)
