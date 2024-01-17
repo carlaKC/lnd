@@ -35,7 +35,8 @@ type interceptorTestCase struct {
 // testForwardInterceptorDedupHtlc tests that upon reconnection, duplicate
 // HTLCs aren't re-notified using the HTLC interceptor API.
 func testForwardInterceptorDedupHtlc(ht *lntest.HarnessTest) {
-	// Initialize the test context with 3 connected nodes.
+	// Initialize the test context with 4 connected nodes, our test will
+	// make use of 3 of them.
 	ts := newInterceptorTestScenario(ht)
 
 	alice, bob, carol := ts.alice, ts.bob, ts.carol
@@ -66,13 +67,15 @@ func testForwardInterceptorDedupHtlc(ht *lntest.HarnessTest) {
 		payAddr:    invoice.PaymentAddr,
 	}
 
-	// We initiate a payment from Alice.
+	// We initiate a payment from Alice to Carol.
 	done := make(chan struct{})
 	go func() {
 		// Signal that all the payments have been sent.
 		defer close(done)
 
-		ts.sendPaymentAndAssertAction(tc)
+		ts.sendPaymentAndAssertAction(
+			tc, []*node.HarnessNode{ts.bob, ts.carol},
+		)
 	}()
 
 	// We start the htlc interceptor with a simple implementation that
@@ -177,8 +180,10 @@ func testForwardInterceptorDedupHtlc(ht *lntest.HarnessTest) {
 }
 
 // testForwardInterceptorBasic tests the forward interceptor RPC layer.
-// The test creates a cluster of 3 connected nodes: Alice -> Bob -> Carol
-// Alice sends 4 different payments to Carol while the interceptor handles
+// The test creates a cluster of 4 connected nodes: Alice -> Bob -> Carol ->
+// Dave.
+//
+// Alice sends 4 different payments to Dave while the interceptor handles
 // differently the htlcs.
 // The test ensures that:
 //  1. Intercepted failed htlcs result in no payment (invoice is not settled).
@@ -189,7 +194,7 @@ func testForwardInterceptorDedupHtlc(ht *lntest.HarnessTest) {
 func testForwardInterceptorBasic(ht *lntest.HarnessTest) {
 	ts := newInterceptorTestScenario(ht)
 
-	alice, bob, carol := ts.alice, ts.bob, ts.carol
+	alice, bob, carol, dave := ts.alice, ts.bob, ts.carol, ts.dave
 
 	// Open and wait for channels.
 	const chanAmt = btcutil.Amount(300000)
@@ -197,12 +202,14 @@ func testForwardInterceptorBasic(ht *lntest.HarnessTest) {
 	reqs := []*lntest.OpenChannelRequest{
 		{Local: alice, Remote: bob, Param: p},
 		{Local: bob, Remote: carol, Param: p},
+		{Local: carol, Remote: dave, Param: p},
 	}
 	resp := ht.OpenMultiChannelsAsync(reqs)
-	cpAB, cpBC := resp[0], resp[1]
+	cpAB, cpBC, cpCD := resp[0], resp[1], resp[2]
 
-	// Make sure Alice is aware of channel Bob=>Carol.
+	// Make sure Alice is aware of channel Bob=>Carol and Carol=>Dave.
 	ht.AssertTopologyChannelOpen(alice, cpBC)
+	ht.AssertTopologyChannelOpen(alice, cpCD)
 
 	// Connect the interceptor.
 	interceptor, cancelInterceptor := bob.RPC.HtlcInterceptor()
@@ -211,16 +218,20 @@ func testForwardInterceptorBasic(ht *lntest.HarnessTest) {
 	testCases := ts.prepareTestCases()
 
 	// For each test case make sure we initiate a payment from Alice to
-	// Carol routed through Bob. For each payment we also test its final
-	// status according to the interceptorAction specified in the test
-	// case.
+	// Dave routed through Bob and Carol. For each payment we also test
+	// its final status according to the interceptorAction specified
+	// the test case.
 	done := make(chan struct{})
 	go func() {
 		// Signal that all the payments have been sent.
 		defer close(done)
 
 		for _, tc := range testCases {
-			attempt := ts.sendPaymentAndAssertAction(tc)
+			attempt := ts.sendPaymentAndAssertAction(
+				tc, []*node.HarnessNode{
+					ts.bob, ts.carol, ts.dave,
+				},
+			)
 			ts.assertAction(tc, attempt)
 		}
 	}()
@@ -347,30 +358,36 @@ func testForwardInterceptorBasic(ht *lntest.HarnessTest) {
 // interceptorTestScenario is a helper struct to hold the test context and
 // provide the needed functionality.
 type interceptorTestScenario struct {
-	ht                *lntest.HarnessTest
-	alice, bob, carol *node.HarnessNode
+	ht                      *lntest.HarnessTest
+	alice, bob, carol, dave *node.HarnessNode
 }
 
 // newInterceptorTestScenario initializes a new test scenario with three nodes
 // and connects them to have the following topology,
 //
-//	Alice --> Bob --> Carol
+//	Alice --> Bob --> Carol --> Dave
 //
-// Among them, Alice and Bob are standby nodes and Carol is a new node.
+// Among them, Alice and Bob are standby nodes and Carol and Dave are a new
+// nodes.
 func newInterceptorTestScenario(
 	ht *lntest.HarnessTest) *interceptorTestScenario {
 
 	alice, bob := ht.Alice, ht.Bob
 	carol := ht.NewNode("carol", nil)
+	dave := ht.NewNode("dave", nil)
+
+	ht.FundCoins(btcutil.SatoshiPerBitcoin, carol)
 
 	ht.EnsureConnected(alice, bob)
 	ht.EnsureConnected(bob, carol)
+	ht.EnsureConnected(carol, dave)
 
 	return &interceptorTestScenario{
 		ht:    ht,
 		alice: alice,
 		bob:   bob,
 		carol: carol,
+		dave:  dave,
 	}
 }
 
@@ -407,13 +424,13 @@ func (c *interceptorTestScenario) prepareTestCases() []*interceptorTestCase {
 
 	for _, t := range cases {
 		inv := &lnrpc.Invoice{ValueMsat: t.amountMsat}
-		addResponse := c.carol.RPC.AddInvoice(inv)
-		invoice := c.carol.RPC.LookupInvoice(addResponse.RHash)
+		addResponse := c.dave.RPC.AddInvoice(inv)
+		invoice := c.dave.RPC.LookupInvoice(addResponse.RHash)
 
 		// We'll need to also decode the returned invoice so we can
 		// grab the payment address which is now required for ALL
 		// payments.
-		payReq := c.carol.RPC.DecodePayReq(invoice.PaymentRequest)
+		payReq := c.dave.RPC.DecodePayReq(invoice.PaymentRequest)
 
 		t.invoice = invoice
 		t.payAddr = payReq.PaymentAddr
@@ -422,15 +439,14 @@ func (c *interceptorTestScenario) prepareTestCases() []*interceptorTestCase {
 	return cases
 }
 
-// sendPaymentAndAssertAction sends a payment from alice to carol and asserts
+// sendPaymentAndAssertAction sends a payment from alice to dave and asserts
 // that the specified interceptor action is taken.
 func (c *interceptorTestScenario) sendPaymentAndAssertAction(
-	tc *interceptorTestCase) *lnrpc.HTLCAttempt {
+	tc *interceptorTestCase,
+	hops []*node.HarnessNode) *lnrpc.HTLCAttempt {
 
-	// Build a route from alice to carol.
-	route := c.buildRoute(
-		tc.amountMsat, []*node.HarnessNode{c.bob, c.carol}, tc.payAddr,
-	)
+	// Build a route with the hops provided.
+	route := c.buildRoute(tc.amountMsat, hops, tc.payAddr)
 
 	// Send a custom record to the forwarding node.
 	route.Hops[0].CustomRecords = map[uint64][]byte{
