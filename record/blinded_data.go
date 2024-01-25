@@ -11,13 +11,6 @@ import (
 )
 
 const (
-	// ShortChannelIDType is a record type for the outgoing channel short
-	// ID.
-	ShortChannelIDType tlv.Type = 2
-
-	// NextNodeType is a record type for the unblinded next node ID.
-	NextNodeType tlv.Type = 4
-
 	// PaymentRelayType is the record type for a tlv containing fee and
 	// cltv forwarding information.
 	PaymentRelayType tlv.Type = 10
@@ -35,16 +28,16 @@ const (
 // route encrypted data blob.
 type BlindedRouteData struct {
 	// ShortChannelID is the channel ID of the next hop.
-	ShortChannelID *lnwire.ShortChannelID
+	ShortChannelID tlv.RecordT[tlv.TlvType2, lnwire.ShortChannelID]
 
 	// NextNodeID is the unblinded node ID of the next hop.
-	NextNodeID *btcec.PublicKey
+	NextNodeID tlv.RecordT[tlv.TlvType4, *btcec.PublicKey]
 
 	// RelayInfo provides the relay parameters for the hop.
-	RelayInfo *PaymentRelayInfo
+	RelayInfo tlv.RecordT[tlv.TlvType10, PaymentRelayInfo]
 
 	// Constraints provides the payment relay constraints for the hop.
-	Constraints *PaymentConstraints
+	Constraints tlv.RecordT[tlv.TlvType12, PaymentConstraints]
 
 	// Features is the set of features the payment requires.
 	Features *lnwire.FeatureVector
@@ -52,26 +45,20 @@ type BlindedRouteData struct {
 
 // DecodeBlindedRouteData decodes the data provided within a blinded route.
 func DecodeBlindedRouteData(r io.Reader) (*BlindedRouteData, error) {
-	var (
-		routeData = &BlindedRouteData{
-			RelayInfo:   &PaymentRelayInfo{},
-			Constraints: &PaymentConstraints{},
-			// We create a non-nil but empty set of features by
-			// default, so that we don't need to worry about nil
-			// values and can decode directly into the raw vector.
-			Features: lnwire.NewFeatureVector(
-				lnwire.NewRawFeatureVector(), lnwire.Features,
-			),
-		}
-
-		shortID uint64
-	)
+	var routeData = BlindedRouteData{
+		// We create a non-nil but empty set of features by
+		// default, so that we don't need to worry about nil
+		// values and can decode directly into the raw vector.
+		Features: lnwire.NewFeatureVector(
+			lnwire.NewRawFeatureVector(), lnwire.Features,
+		),
+	}
 
 	records := []tlv.Record{
-		tlv.MakePrimitiveRecord(ShortChannelIDType, &shortID),
-		tlv.MakePrimitiveRecord(NextNodeType, &routeData.NextNodeID),
-		newPaymentRelayRecord(routeData.RelayInfo),
-		newPaymentConstraintsRecord(routeData.Constraints),
+		routeData.ShortChannelID.Record(),
+		routeData.NextNodeID.Record(),
+		routeData.RelayInfo.Record(),
+		routeData.Constraints.Record(),
 		routeData.Features.Record(FeatureVectorType),
 	}
 
@@ -80,61 +67,25 @@ func DecodeBlindedRouteData(r io.Reader) (*BlindedRouteData, error) {
 		return nil, err
 	}
 
-	tlvMap, err := stream.DecodeWithParsedTypes(r)
-	if err != nil {
+	if err := stream.Decode(r); err != nil {
 		return nil, err
 	}
 
-	if _, ok := tlvMap[PaymentRelayType]; !ok {
-		routeData.RelayInfo = nil
-	}
-
-	if _, ok := tlvMap[PaymentConstraintType]; !ok {
-		routeData.Constraints = nil
-	}
-
-	if _, ok := tlvMap[ShortChannelIDType]; ok {
-		shortID := lnwire.NewShortChanIDFromInt(shortID)
-		routeData.ShortChannelID = &shortID
-	}
-
-	return routeData, nil
+	return &routeData, nil
 }
 
 // EncodeBlindedRouteData encodes the blinded route data provided.
 func EncodeBlindedRouteData(data *BlindedRouteData) ([]byte, error) {
 	var (
-		w       = new(bytes.Buffer)
-		records []tlv.Record
+		w = new(bytes.Buffer)
+
+		records = []tlv.Record{
+			data.ShortChannelID.Record(),
+			data.NextNodeID.Record(),
+			data.RelayInfo.Record(),
+			data.Constraints.Record(),
+		}
 	)
-
-	if data.ShortChannelID != nil {
-		shortID := data.ShortChannelID.ToUint64()
-		shortIDRecord := tlv.MakePrimitiveRecord(
-			ShortChannelIDType, &shortID,
-		)
-
-		records = append(records, shortIDRecord)
-	}
-
-	if data.NextNodeID != nil {
-		nodeIDRecord := tlv.MakePrimitiveRecord(
-			NextNodeType, &data.NextNodeID,
-		)
-		records = append(records, nodeIDRecord)
-	}
-
-	if data.RelayInfo != nil {
-		relayRecord := newPaymentRelayRecord(data.RelayInfo)
-		records = append(records, relayRecord)
-	}
-
-	if data.Constraints != nil {
-		constraintsRecord := newPaymentConstraintsRecord(
-			data.Constraints,
-		)
-		records = append(records, constraintsRecord)
-	}
 
 	if data.Features != nil && !data.Features.IsEmpty() {
 		featuresRecord := data.Features.RawFeatureVector.Record(
@@ -168,13 +119,14 @@ type PaymentRelayInfo struct {
 	BaseFee uint32
 }
 
-// newPaymentRelayRecord creates a tlv.Record that encodes the payment relay
-// (type 10) type for an encrypted blob payload.
-func newPaymentRelayRecord(info *PaymentRelayInfo) tlv.Record {
+// Record returns a TLV record for PaymentRelayInfo.
+//
+// Note: implements the RecordProducer interface.
+func (i *PaymentRelayInfo) Record() tlv.Record {
 	return tlv.MakeDynamicRecord(
-		PaymentRelayType, &info, func() uint64 {
+		PaymentRelayType, &i, func() uint64 {
 			// uint16 + uint32 + tuint32
-			return 2 + 4 + tlv.SizeTUint32(info.BaseFee)
+			return 2 + 4 + tlv.SizeTUint32(i.BaseFee)
 		}, encodePaymentRelay, decodePaymentRelay,
 	)
 }
@@ -221,6 +173,7 @@ func decodePaymentRelay(r io.Reader, val interface{}, buf *[8]byte,
 		relayInfo.CltvExpiryDelta = binary.BigEndian.Uint16(
 			scratch[0:2],
 		)
+
 		relayInfo.FeeRate = binary.BigEndian.Uint32(scratch[2:6])
 
 		// To be able to re-use the DTUint32 function we create a
@@ -244,12 +197,12 @@ type PaymentConstraints struct {
 	HtlcMinimumMsat lnwire.MilliSatoshi
 }
 
-func newPaymentConstraintsRecord(constraints *PaymentConstraints) tlv.Record {
+func (p *PaymentConstraints) Record() tlv.Record {
 	return tlv.MakeDynamicRecord(
-		PaymentConstraintType, &constraints, func() uint64 {
+		PaymentConstraintType, &p, func() uint64 {
 			// uint32 + tuint64.
 			return 4 + tlv.SizeTUint64(uint64(
-				constraints.HtlcMinimumMsat,
+				p.HtlcMinimumMsat,
 			))
 		},
 		encodePaymentConstraints, decodePaymentConstraints,

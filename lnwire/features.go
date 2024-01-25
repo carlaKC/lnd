@@ -770,3 +770,10 @@ func (fv *FeatureVector) Clone() *FeatureVector {
 	features := fv.RawFeatureVector.Clone()
 	return NewFeatureVector(features, fv.featureNames)
 }
+
+// Record returns a TLV record that can be used to encode/decode raw feature
+// vectors. Note that the length of the feature vector is not included, because
+// it is covered by the TLV record's length field.
+func (fv *FeatureVector) Record(recordType tlv.Type) tlv.Record {
+	return fv.RawFeatureVector.Record(recordType)
+}

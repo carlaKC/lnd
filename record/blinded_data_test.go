@@ -8,6 +8,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/tlv"
 	"github.com/stretchr/testify/require"
 )
 
@@ -76,23 +77,25 @@ func TestBlindedDataEncoding(t *testing.T) {
 		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
+			pubkey := pubkey(t)
 
 			// Create a standard set of blinded route data, using
 			// the values from our test case for the variable
 			// length encoded values.
 			channelID := lnwire.NewShortChanIDFromInt(1)
 			encodedData := &BlindedRouteData{
-				ShortChannelID: &channelID,
-				NextNodeID:     pubkey(t),
-				RelayInfo: &PaymentRelayInfo{
-					FeeRate:         2,
-					CltvExpiryDelta: 3,
-					BaseFee:         testCase.baseFee,
-				},
-				Constraints: &PaymentConstraints{
+				ShortChannelID: tlv.NewRecordT[tlv.TlvType2](channelID),
+				NextNodeID:     tlv.NewPrimitiveRecord[tlv.TlvType4](pubkey),
+				RelayInfo: tlv.NewRecordT[tlv.TlvType10](
+					PaymentRelayInfo{
+						FeeRate:         2,
+						CltvExpiryDelta: 3,
+						BaseFee:         testCase.baseFee,
+					}),
+				Constraints: tlv.NewRecordT[tlv.TlvType12](PaymentConstraints{
 					MaxCltvExpiry:   4,
 					HtlcMinimumMsat: testCase.htlcMin,
-				},
+				}),
 				Features: testCase.features,
 			}
 
