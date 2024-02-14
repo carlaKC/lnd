@@ -153,6 +153,9 @@
 * [Env Variables in lnd.conf](https://github.com/lightningnetwork/lnd/pull/8310)
   Support utilizing the usage of environment variables in `lnd.conf` for `rpcuser` and `rpcpass` fields to better protect the secrets.
 
+* [Preparatory work](https://github.com/lightningnetwork/lnd/pull/8159) for 
+  forwarding of blinded routes was added.
+
 ## RPC Additions
 
 * [Deprecated](https://github.com/lightningnetwork/lnd/pull/7175)
