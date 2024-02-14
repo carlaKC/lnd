@@ -133,6 +133,9 @@
   broadcast. This means when a transaction has failed the `testmempoolaccept`
   check by bitcoind or btcd, the broadcast won't be attempted.
 
+* [Preparatory work](https://github.com/lightningnetwork/lnd/pull/8159) for 
+  forwarding of blinded routes was added.
+
 ## RPC Additions
 
 * [Deprecated](https://github.com/lightningnetwork/lnd/pull/7175)
