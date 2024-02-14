@@ -145,6 +145,9 @@
   funding operations and the new `PsbtCoinSelect` option of the `FundPsbt`
   RPC](https://github.com/lightningnetwork/lnd/pull/8378).
 
+* [Preparatory work](https://github.com/lightningnetwork/lnd/pull/8159) for 
+  forwarding of blinded routes was added.
+
 ## RPC Additions
 
 * [Deprecated](https://github.com/lightningnetwork/lnd/pull/7175)
