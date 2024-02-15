@@ -563,6 +563,12 @@ var allTestCases = []*lntest.TestCase{
 		TestFunc: testForwardBlindedRoute,
 	},
 	{
+		Name:     "receiver blinded error",
+		TestFunc: testReceiverBlindedError,
+	},
+		TestFunc: testRelayingBlindedError,
+	},
+	{
 		Name:     "removetx",
 		TestFunc: testRemoveTx,
 	},
