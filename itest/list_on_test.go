@@ -566,6 +566,8 @@ var allTestCases = []*lntest.TestCase{
 		Name:     "receiver blinded error",
 		TestFunc: testReceiverBlindedError,
 	},
+	{
+		Name:     "relayer blinded error",
 		TestFunc: testRelayingBlindedError,
 	},
 	{
