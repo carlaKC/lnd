@@ -123,6 +123,8 @@ func newManager(cfg Config, desc setDesc) (*Manager, error) {
 			raw.Unset(lnwire.PaymentAddrRequired)
 			raw.Unset(lnwire.MPPOptional)
 			raw.Unset(lnwire.MPPRequired)
+			raw.Unset(lnwire.RouteBlindingOptional)
+			raw.Unset(lnwire.RouteBlindingRequired)
 			raw.Unset(lnwire.AMPOptional)
 			raw.Unset(lnwire.AMPRequired)
 			raw.Unset(lnwire.KeysendOptional)
