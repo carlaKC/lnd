@@ -3,13 +3,15 @@ package lnrpc
 import (
 	"encoding/hex"
 	"errors"
-	fmt "fmt"
+	"fmt"
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/wallet"
+	"github.com/lightningnetwork/lnd/aliasmgr"
+	"github.com/lightningnetwork/lnd/fn"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwire"
 )
@@ -206,4 +208,20 @@ func UnmarshallCoinSelectionStrategy(strategy CoinSelectionStrategy,
 		return nil, fmt.Errorf("unknown coin selection strategy "+
 			"%v", strategy)
 	}
+}
+
+// MarshalAliasMap converts a ScidAliasMap to its proto counterpart. This is
+// used in various RPCs that handle scid alias mappings.
+func MarshalAliasMap(scidMap aliasmgr.ScidAliasMap) []*AliasMap {
+	res := make([]*AliasMap, 0, len(scidMap))
+	for base, aliases := range scidMap {
+		res = append(res, &AliasMap{
+			BaseScid: base.ToUint64(),
+			Aliases: fn.Map(func(a lnwire.ShortChannelID) uint64 {
+				return a.ToUint64()
+			}, aliases),
+		})
+	}
+
+	return res
 }
