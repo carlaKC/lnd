@@ -30,6 +30,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/queue"
 	"github.com/lightningnetwork/lnd/ticker"
+	"github.com/lightningnetwork/lnd/tlv"
 )
 
 func init() {
@@ -3315,12 +3316,16 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				// Otherwise, it was already processed, we can
 				// can collect it and continue.
 				addMsg := &lnwire.UpdateAddHTLC{
-					Expiry: fwdInfo.OutgoingCTLV,
-					Amount: fwdInfo.AmountToForward,
-					BlindingPoint: lnwire.NewBlindingPoint(
-						fwdInfo.NextBlinding,
-					),
+					Expiry:      fwdInfo.OutgoingCTLV,
+					Amount:      fwdInfo.AmountToForward,
 					PaymentHash: pd.RHash,
+				}
+
+				if fwdInfo.NextBlinding != nil {
+					addMsg.BlindingPoint = tlv.SomeRecordT(
+						//nolint:lll
+						tlv.NewPrimitiveRecord[lnwire.BlindingPointTlvType](fwdInfo.NextBlinding),
+					)
 				}
 
 				// Finally, we'll encode the onion packet for
@@ -3360,14 +3365,17 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 			// create the outgoing HTLC using the parameters as
 			// specified in the forwarding info.
 			addMsg := &lnwire.UpdateAddHTLC{
-				Expiry: fwdInfo.OutgoingCTLV,
-				Amount: fwdInfo.AmountToForward,
-				BlindingPoint: lnwire.NewBlindingPoint(
-					fwdInfo.NextBlinding,
-				),
+				Expiry:      fwdInfo.OutgoingCTLV,
+				Amount:      fwdInfo.AmountToForward,
 				PaymentHash: pd.RHash,
 			}
 
+			if fwdInfo.NextBlinding != nil {
+				addMsg.BlindingPoint = tlv.SomeRecordT(
+					//nolint:lll
+					tlv.NewPrimitiveRecord[lnwire.BlindingPointTlvType](fwdInfo.NextBlinding),
+				)
+			}
 			// Finally, we'll encode the onion packet for the
 			// _next_ hop using the hop iterator decoded for the
 			// current hop.
