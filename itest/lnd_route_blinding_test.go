@@ -422,23 +422,12 @@ func (b *blindedForwardTest) createBlindedRoute(hops []*forwardingEdge,
 	// constraints.
 	for i := 0; i < len(hops); i++ {
 		node := hops[i]
-		payload := &record.BlindedRouteData{
-			NextNodeID:     node.pubkey,
-			ShortChannelID: &node.channelID,
-		}
-
-		// Add the next hop's ID for all nodes that have a next hop.
-		if i < len(hops)-1 {
-			nextHop := hops[i+1]
-
-			payload.NextNodeID = nextHop.pubkey
-			payload.ShortChannelID = &node.channelID
-		}
+		scid := node.channelID
 
 		// Set the relay information for this edge, and add it to our
 		// aggregate info and update our aggregate constraints.
 		delta := uint16(node.edge.TimeLockDelta)
-		payload.RelayInfo = &record.PaymentRelayInfo{
+		relayInfo := &record.PaymentRelayInfo{
 			BaseFee:         uint32(node.edge.FeeBaseMsat),
 			FeeRate:         uint32(node.edge.FeeRateMilliMsat),
 			CltvExpiryDelta: delta,
@@ -447,7 +436,7 @@ func (b *blindedForwardTest) createBlindedRoute(hops []*forwardingEdge,
 		// We set our constraints with our edge's actual htlc min, and
 		// an arbitrary maximum expiry (since it's just an anti-probing
 		// mechanism).
-		payload.Constraints = &record.PaymentConstraints{
+		constraints := &record.PaymentConstraints{
 			HtlcMinimumMsat: lnwire.MilliSatoshi(node.edge.MinHtlc),
 			MaxCltvExpiry:   100000,
 		}
@@ -457,6 +446,9 @@ func (b *blindedForwardTest) createBlindedRoute(hops []*forwardingEdge,
 
 		// Encode the route's blinded data and include it in the
 		// blinded hop.
+		payload := record.NewBlindedRouteData(
+			scid, nil, *relayInfo, constraints, nil,
+		)
 		payloadBytes, err := record.EncodeBlindedRouteData(payload)
 		require.NoError(b.ht, err)
 
@@ -512,14 +504,15 @@ func (b *blindedForwardTest) createBlindedRoute(hops []*forwardingEdge,
 	// Add our destination node at the end of the path. We don't need to
 	// add any forwarding parameters because we're at the final hop.
 	payloadBytes, err := record.EncodeBlindedRouteData(
-		&record.BlindedRouteData{
-			// TODO: we don't have support for the final hop fields,
-			// because only forwarding is supported. We add a next
-			// node ID here so that it _looks like_ a valid
-			// forwarding hop (though in reality it's the last
-			// hop).
-			NextNodeID: dest,
-		},
+		// TODO: we don't have support for the final hop fields,
+		// because only forwarding is supported. We add a next
+		// node ID here so that it _looks like_ a valid
+		// forwarding hop (though in reality it's the last
+		// hop).
+		record.NewBlindedRouteData(
+			lnwire.NewShortChanIDFromInt(100), nil,
+			record.PaymentRelayInfo{}, nil, nil,
+		),
 	)
 	require.NoError(b.ht, err, "final payload")
 
