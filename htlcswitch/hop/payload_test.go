@@ -572,13 +572,15 @@ func TestValidateBlindedRouteData(t *testing.T) {
 	}{
 		{
 			name: "max cltv expired",
-			data: &record.BlindedRouteData{
-				Constraints: &record.PaymentConstraints{
+			data: record.NewBlindedRouteData(
+				scid,
+				nil,
+				record.PaymentRelayInfo{},
+				&record.PaymentConstraints{
 					MaxCltvExpiry: 100,
 				},
-				RelayInfo:      &record.PaymentRelayInfo{},
-				ShortChannelID: &scid,
-			},
+				nil,
+			),
 			incomingTimelock: 200,
 			err: hop.ErrInvalidPayload{
 				Type:      record.LockTimeOnionType,
@@ -587,14 +589,16 @@ func TestValidateBlindedRouteData(t *testing.T) {
 		},
 		{
 			name: "zero max cltv",
-			data: &record.BlindedRouteData{
-				Constraints: &record.PaymentConstraints{
+			data: record.NewBlindedRouteData(
+				scid,
+				nil,
+				record.PaymentRelayInfo{},
+				&record.PaymentConstraints{
 					MaxCltvExpiry:   0,
 					HtlcMinimumMsat: 10,
 				},
-				RelayInfo:      &record.PaymentRelayInfo{},
-				ShortChannelID: &scid,
-			},
+				nil,
+			),
 			incomingAmount:   100,
 			incomingTimelock: 10,
 			err: hop.ErrInvalidPayload{
@@ -604,13 +608,15 @@ func TestValidateBlindedRouteData(t *testing.T) {
 		},
 		{
 			name: "amount below minimum",
-			data: &record.BlindedRouteData{
-				Constraints: &record.PaymentConstraints{
+			data: record.NewBlindedRouteData(
+				scid,
+				nil,
+				record.PaymentRelayInfo{},
+				&record.PaymentConstraints{
 					HtlcMinimumMsat: 15,
 				},
-				RelayInfo:      &record.PaymentRelayInfo{},
-				ShortChannelID: &scid,
-			},
+				nil,
+			),
 			incomingAmount: 10,
 			err: hop.ErrInvalidPayload{
 				Type:      record.AmtOnionType,
@@ -619,86 +625,59 @@ func TestValidateBlindedRouteData(t *testing.T) {
 		},
 		{
 			name: "valid, no features",
-			data: &record.BlindedRouteData{
-				Constraints: &record.PaymentConstraints{
+			data: record.NewBlindedRouteData(
+				scid,
+				nil,
+				record.PaymentRelayInfo{},
+				&record.PaymentConstraints{
 					MaxCltvExpiry:   100,
 					HtlcMinimumMsat: 20,
 				},
-				RelayInfo:      &record.PaymentRelayInfo{},
-				ShortChannelID: &scid,
-			},
+				nil,
+			),
 			incomingAmount:   40,
 			incomingTimelock: 80,
 		},
 		{
 			name: "unknown features",
-			data: &record.BlindedRouteData{
-				Constraints: &record.PaymentConstraints{
+			data: record.NewBlindedRouteData(
+				scid,
+				nil,
+				record.PaymentRelayInfo{},
+				&record.PaymentConstraints{
 					MaxCltvExpiry:   100,
 					HtlcMinimumMsat: 20,
 				},
-				RelayInfo:      &record.PaymentRelayInfo{},
-				ShortChannelID: &scid,
-				Features: lnwire.NewFeatureVector(
+				lnwire.NewFeatureVector(
 					lnwire.NewRawFeatureVector(
 						lnwire.FeatureBit(9999),
 					),
 					lnwire.Features,
 				),
-			},
+			),
 			incomingAmount:   40,
 			incomingTimelock: 80,
 			err: hop.ErrInvalidPayload{
-				Type:      record.FeatureVectorType,
+				Type:      14,
 				Violation: hop.IncludedViolation,
 			},
 		},
 		{
-			name: "no node id or channel id",
-			data: &record.BlindedRouteData{
-				Constraints: &record.PaymentConstraints{
-					MaxCltvExpiry:   100,
-					HtlcMinimumMsat: 20,
-				},
-				RelayInfo: &record.PaymentRelayInfo{},
-			},
-			incomingAmount:   40,
-			incomingTimelock: 80,
-			err: hop.ErrInvalidPayload{
-				Type:      record.ShortChannelIDType,
-				Violation: hop.OmittedViolation,
-			},
-		},
-		{
-			name: "no payment relay",
-			data: &record.BlindedRouteData{
-				Constraints: &record.PaymentConstraints{
-					MaxCltvExpiry:   100,
-					HtlcMinimumMsat: 20,
-				},
-				ShortChannelID: &scid,
-			},
-			incomingAmount:   40,
-			incomingTimelock: 80,
-			err: hop.ErrInvalidPayload{
-				Type:      record.PaymentRelayType,
-				Violation: hop.OmittedViolation,
-			},
-		},
-		{
 			name: "valid data",
-			data: &record.BlindedRouteData{
-				Constraints: &record.PaymentConstraints{
-					MaxCltvExpiry:   100,
-					HtlcMinimumMsat: 20,
-				},
-				RelayInfo: &record.PaymentRelayInfo{
+			data: record.NewBlindedRouteData(
+				scid,
+				nil,
+				record.PaymentRelayInfo{
 					CltvExpiryDelta: 10,
 					FeeRate:         10,
 					BaseFee:         100,
 				},
-				ShortChannelID: &scid,
-			},
+				&record.PaymentConstraints{
+					MaxCltvExpiry:   100,
+					HtlcMinimumMsat: 20,
+				},
+				nil,
+			),
 			incomingAmount:   40,
 			incomingTimelock: 80,
 		},
