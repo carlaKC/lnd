@@ -10,6 +10,7 @@ import (
 	sphinx "github.com/lightningnetwork/lightning-onion"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/record"
+	"github.com/lightningnetwork/lnd/tlv"
 )
 
 // Iterator is an interface that abstracts away the routing information
@@ -178,13 +179,18 @@ func MakeBlindingKit(processor BlindingProcessor,
 			// (the sender intended to switch out directly for
 			// this blinding point). Otherwise, we'll tweak our
 			// blinding point to get the next ephemeral key.
-			nextEph := routeData.NextBlindingOverride
-			if nextEph == nil {
-				nextEph, err = processor.NextEphemeral(blinding)
-				if err != nil {
-					return nil, err
-				}
+			nextEph, err := processor.NextEphemeral(blinding)
+			if err != nil {
+				return nil, err
 			}
+
+			routeData.NextBlindingOverride.WhenSome(
+				func(o tlv.RecordT[tlv.TlvType8,
+					*btcec.PublicKey]) {
+
+					nextEph = o.Val
+				},
+			)
 
 			return deriveForwardingInfo(
 				routeData, incomingAmount, incomingCltv,
@@ -214,7 +220,7 @@ func deriveForwardingInfo(data *record.BlindedRouteData,
 		OutgoingCTLV: incomingCltv - uint32(
 			data.RelayInfo.Val.CltvExpiryDelta,
 		),
-		NextBlinding:    nextEph,
+		NextBlinding: nextEph,
 	}, nil
 }
 
