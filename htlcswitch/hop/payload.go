@@ -429,72 +429,52 @@ func ValidateBlindedRouteData(blindedData *record.BlindedRouteData,
 
 	// Bolt 04 notes that we should enforce payment constraints _if_ they
 	// are present, so we do not fail if not provided.
-	if blindedData.Constraints != nil {
-		// MUST fail if the expiry is greater than max_cltv_expiry.
-		maxCLTV := blindedData.Constraints.MaxCltvExpiry
-		if incomingTimelock > maxCLTV {
-			return ErrInvalidPayload{
-				Type:      record.LockTimeOnionType,
-				Violation: InsufficientViolation,
+	var err error
+	blindedData.Constraints.WhenSome(
+		func(c tlv.RecordT[tlv.TlvType12, record.PaymentConstraints]) {
+			// MUST fail if the expiry is greater than
+			// max_cltv_expiry.
+			if incomingTimelock > c.Val.MaxCltvExpiry {
+				err = ErrInvalidPayload{
+					Type:      record.LockTimeOnionType,
+					Violation: InsufficientViolation,
+				}
 			}
-		}
 
-		// MUST fail if the amount is below htlc_minimum_msat.
-		if incomingAmount < blindedData.Constraints.HtlcMinimumMsat {
-			return ErrInvalidPayload{
-				Type:      record.AmtOnionType,
-				Violation: InsufficientViolation,
+			// MUST fail if the amount is below htlc_minimum_msat.
+			if incomingAmount < c.Val.HtlcMinimumMsat {
+				err = ErrInvalidPayload{
+					Type:      record.AmtOnionType,
+					Violation: InsufficientViolation,
+				}
 			}
-		}
-	}
-
-	// Encrypted data MUST include payment relay information.
-	if blindedData.RelayInfo == nil {
-		return ErrInvalidPayload{
-			Type:      record.PaymentRelayType,
-			Violation: OmittedViolation,
-		}
-	}
-
-	// Specification validation instructions for receivers are:
-	// * encrypted data must either have short_channel id _or_ next_node_id.
-	//
-	// However, instructions for creators of blinded route encrypted data
-	// for payments state that a short_channel_id MUST be included.
-	//
-	// This difference in validation and creation instructions is present
-	// because blinded routes are used for blinded payments and onion
-	// messages (the latter relying on node IDs rather than short channel
-	// ids).
-	//
-	// While we may transition relaying to node_id based payments, this is
-	// not currently a valid option for blinded payments (because the
-	// receiver must give us a short channel ID), so we simply validate
-	// that we have a short channel ID.
-	//
-	// TODO: relax validation if node_id based blinded payments are
-	// introduced to the specification.
-	if blindedData.ShortChannelID == nil {
-		return ErrInvalidPayload{
-			Type:      record.ShortChannelIDType,
-			Violation: OmittedViolation,
-		}
-	}
-
-	// No need to check anything else if features are not provided (bolt 4
-	// indicates that omitted features should be treated like an empty
-	// vector).
-	if blindedData.Features == nil {
-		return nil
+		},
+	)
+	if err != nil {
+		return err
 	}
 
 	// Fail if we don't understand any features (even or odd), because we
-	// expect the features to have been set from our announcement.
-	if blindedData.Features.UnknownFeatures() {
-		return ErrInvalidPayload{
-			Type:      record.FeatureVectorType,
-			Violation: IncludedViolation,
-		}
+	// expect the features to have been set from our announcement. If the
+	// feature vector TLV is not included, it's interpreted as an empty
+	// vector (no validation required).
+	blindedData.Features.WhenSome(
+		func(f tlv.RecordT[tlv.TlvType14, record.BlindedFeatures]) {
+			rawFeatures := lnwire.RawFeatureVector(f.Val)
+			featureVector := lnwire.NewFeatureVector(
+				&rawFeatures, lnwire.Features,
+			)
+
+			if featureVector.UnknownFeatures() {
+				err = ErrInvalidPayload{
+					Type:      14,
+					Violation: IncludedViolation,
+				}
+			}
+		},
+	)
+	if err != nil {
+		return err
 	}
 
 	return nil
