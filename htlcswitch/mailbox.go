@@ -716,7 +716,7 @@ func (m *memoryMailBox) FailAdd(pkt *htlcPacket) {
 	// a more vague invalid onion blinding error. We may be the
 	// introduction point _or_ a relaying node, because either would be
 	// expected to set a blinding point for the outgoing HTLC.
-	if htlc.BlindingPoint != nil {
+	if htlc.BlindingPoint.IsSome() {
 		failure = lnwire.NewInvalidBlinding(htlc.OnionBlob[:])
 	}
 
