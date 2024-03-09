@@ -35,6 +35,10 @@ const (
 	// begins to be interpreted as an absolute block height, rather than a
 	// relative one.
 	AbsoluteThawHeightThreshold uint32 = 500000
+
+	// HTLCBlindingPointTLV is the tlv type used for storing blinding
+	// points with HTLCs.
+	HTLCBlindingPointTLV tlv.Type = 0
 )
 
 var (
@@ -2310,14 +2314,14 @@ type HTLC struct {
 	// Note that this extra data is stored inline with the OnionBlob for
 	// legacy reasons, see serialization/deserialization functions for
 	// detail.
-	ExtraData []byte
+	ExtraData lnwire.ExtraOpaqueData
 
 	// BlindingPoint is an optional blinding point included with the HTLC.
 	//
 	// Note: this field is not a part of on-disk representation of the
 	// HTLC. It is stored in the ExtraData field, which is used to store
 	// a TLV stream of additional information associated with the HTLC.
-	BlindingPoint *btcec.PublicKey
+	BlindingPoint lnwire.BlindingPointRecord
 }
 
 // serializeExtraData encodes a TLV stream of extra data to be stored with a
@@ -2329,26 +2333,14 @@ type HTLC struct {
 // This function MUST be called to persist all HTLC values when they are
 // serialized.
 func (h *HTLC) serializeExtraData() error {
-	if h.BlindingPoint == nil {
-		return nil
-	}
+	var records []tlv.RecordProducer
+	h.BlindingPoint.WhenSome(func(b tlv.RecordT[tlv.TlvType0,
+		*btcec.PublicKey]) {
 
-	stream, err := tlv.NewStream(
-		tlv.MakePrimitiveRecord(
-			lnwire.BlindingPointRecordType, &h.BlindingPoint,
-		),
-	)
-	if err != nil {
-		return err
-	}
+		records = append(records, &b)
+	})
 
-	var b bytes.Buffer
-	if err := stream.Encode(&b); err != nil {
-		return err
-	}
-	h.ExtraData = b.Bytes()
-
-	return nil
+	return h.ExtraData.PackRecords(records...)
 }
 
 // deserializeExtraData extracts TLVs from the extra data persisted for the
@@ -2361,16 +2353,17 @@ func (h *HTLC) deserializeExtraData() error {
 		return nil
 	}
 
-	stream, err := tlv.NewStream(
-		tlv.MakePrimitiveRecord(
-			lnwire.BlindingPointRecordType, &h.BlindingPoint,
-		),
-	)
+	blindingPoint := h.BlindingPoint.Zero()
+	tlvMap, err := h.ExtraData.ExtractRecords(&blindingPoint)
 	if err != nil {
-		return nil
+		return err
 	}
 
-	return stream.Decode(bytes.NewBuffer(h.ExtraData))
+	if val, ok := tlvMap[h.BlindingPoint.TlvType()]; ok && val == nil {
+		h.BlindingPoint = tlv.SomeRecordT(blindingPoint)
+	}
+
+	return nil
 }
 
 // SerializeHtlcs writes out the passed set of HTLC's into the passed writer

@@ -77,6 +77,19 @@ type UpdateAddHTLC struct {
 	ExtraData ExtraOpaqueData
 }
 
+// BlingingPointOrNil returns the blinding point associated with the update, or
+// nil.
+func (u *UpdateAddHTLC) BlingingPointOrNil() *btcec.PublicKey {
+	var blindingPoint *btcec.PublicKey
+	u.BlindingPoint.WhenSome(func(b tlv.RecordT[BlindingPointTlvType,
+		*btcec.PublicKey]) {
+
+		blindingPoint = b.Val
+	})
+
+	return blindingPoint
+}
+
 // NewUpdateAddHTLC returns a new empty UpdateAddHTLC message.
 func NewUpdateAddHTLC() *UpdateAddHTLC {
 	return &UpdateAddHTLC{}
