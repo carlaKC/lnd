@@ -1467,7 +1467,7 @@ func (s *Switch) failAddPacket(packet *htlcPacket, failure *LinkError) error {
 	// with invalid onion blinding, logging the actual error so that we
 	// have a sense of what actually happened.
 	failureMsg := failure.WireMessage()
-	if htlc.BlindingPoint.Pubkey() != nil {
+	if htlc.BlindingPoint.IsSome() {
 		log.Debugf("Incoming htlc (%v:%v) in blinded route failed "+
 			"back with failure code: %v, replaced with %v.",
 			htlc.ChanID, htlc.ID, failure.msg.Code(),
