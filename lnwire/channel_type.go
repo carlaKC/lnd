@@ -19,7 +19,7 @@ type ChannelType RawFeatureVector
 // featureBitLen returns the length in bytes of the encoded feature bits.
 func (c ChannelType) featureBitLen() uint64 {
 	fv := RawFeatureVector(c)
-	return fv.sizeFunc()
+	return fv.SizeFunc()
 }
 
 // Record returns a TLV record that can be used to encode/decode the channel
@@ -35,7 +35,7 @@ func (c *ChannelType) Record() tlv.Record {
 func channelTypeEncoder(w io.Writer, val interface{}, buf *[8]byte) error {
 	if v, ok := val.(*ChannelType); ok {
 		fv := RawFeatureVector(*v)
-		return rawFeatureEncoder(w, &fv, buf)
+		return RawFeatureEncoder(w, &fv, buf)
 	}
 
 	return tlv.NewTypeForEncodingErr(val, "*lnwire.ChannelType")
@@ -48,7 +48,7 @@ func channelTypeDecoder(r io.Reader, val interface{}, buf *[8]byte,
 	if v, ok := val.(*ChannelType); ok {
 		fv := NewRawFeatureVector()
 
-		if err := rawFeatureDecoder(r, fv, buf, l); err != nil {
+		if err := RawFeatureDecoder(r, fv, buf, l); err != nil {
 			return err
 		}
 
