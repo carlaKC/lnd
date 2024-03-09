@@ -25,6 +25,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/tlv"
 	"github.com/stretchr/testify/require"
 )
 
@@ -10236,7 +10237,10 @@ func createRandomHTLC(t *testing.T, incoming bool) channeldb.HTLC {
 		OnionBlob:     onionBlob,
 		HtlcIndex:     rand.Uint64(),
 		LogIndex:      rand.Uint64(),
-		BlindingPoint: blinding,
+		BlindingPoint: tlv.SomeRecordT(
+			//nolint:lll
+			tlv.NewPrimitiveRecord[lnwire.BlindingPointTlvType](blinding),
+		),
 	}
 }
 
@@ -10821,7 +10825,9 @@ func TestBlindingPointPersistence(t *testing.T) {
 		"0228f2af0abe322403480fb3ee172f7f1601e67d1da6cad40b54c4468d48236c39", //nolint:lll
 	)
 	require.NoError(t, err)
-	htlc.BlindingPoint = lnwire.NewBlindingPoint(blinding)
+	htlc.BlindingPoint = tlv.SomeRecordT(
+		tlv.NewPrimitiveRecord[lnwire.BlindingPointTlvType](blinding),
+	)
 
 	_, err = aliceChannel.AddHTLC(htlc, nil)
 

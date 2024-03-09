@@ -23,6 +23,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntest/channels"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/shachain"
+	"github.com/lightningnetwork/lnd/tlv"
 	"github.com/stretchr/testify/require"
 )
 
@@ -1614,7 +1615,11 @@ func TestHTLCsExtraData(t *testing.T) {
 		RHash:         key,
 		RefundTimeout: 1,
 		OnionBlob:     lnmock.MockOnion(),
-		BlindingPoint: pubKey,
+		BlindingPoint: tlv.SomeRecordT(
+			tlv.NewPrimitiveRecord[lnwire.BlindingPointTlvType](
+				pubKey,
+			),
+		),
 	}
 
 	testCases := []struct {
