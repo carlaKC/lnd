@@ -36,10 +36,11 @@ func TestBlindedDataEncoding(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		baseFee  uint32
-		htlcMin  lnwire.MilliSatoshi
-		features *lnwire.FeatureVector
+		name        string
+		baseFee     uint32
+		htlcMin     lnwire.MilliSatoshi
+		features    *lnwire.FeatureVector
+		constraints bool
 	}{
 		{
 			name:    "zero variable values",
@@ -71,6 +72,10 @@ func TestBlindedDataEncoding(t *testing.T) {
 				lnwire.Features,
 			),
 		},
+		{
+			name:        "no payment constraints",
+			constraints: true,
+		},
 	}
 
 	for _, testCase := range tests {
@@ -82,34 +87,27 @@ func TestBlindedDataEncoding(t *testing.T) {
 			// the values from our test case for the variable
 			// length encoded values.
 			channelID := lnwire.NewShortChanIDFromInt(1)
-			encodedData := &BlindedRouteData{
-				ShortChannelID:       &channelID,
-				NextNodeID:           pubkey(t),
-				NextBlindingOverride: pubkey(t),
-				RelayInfo: &PaymentRelayInfo{
-					FeeRate:         2,
-					CltvExpiryDelta: 3,
-					BaseFee:         testCase.baseFee,
-				},
-				Constraints: &PaymentConstraints{
+			info := PaymentRelayInfo{
+				FeeRate:         2,
+				CltvExpiryDelta: 3,
+				BaseFee:         testCase.baseFee,
+			}
+
+			var constraints *PaymentConstraints
+			if testCase.constraints {
+				constraints = &PaymentConstraints{
 					MaxCltvExpiry:   4,
 					HtlcMinimumMsat: testCase.htlcMin,
-				},
-				Features: testCase.features,
+				}
 			}
+
+			encodedData := NewBlindedRouteData(
+				channelID, pubkey(t), info, constraints,
+				testCase.features,
+			)
 
 			encoded, err := EncodeBlindedRouteData(encodedData)
 			require.NoError(t, err)
-
-			// We fill a non-nil feature vector if there is no
-			// features tlv, so we set our expected feature vector
-			// to an empty one if that's what we expect
-			if encodedData.Features == nil ||
-				encodedData.Features.IsEmpty() {
-
-				//nolint:lll
-				encodedData.Features = lnwire.EmptyFeatureVector()
-			}
 
 			b := bytes.NewBuffer(encoded)
 			decodedData, err := DecodeBlindedRouteData(b)
@@ -136,48 +134,48 @@ func TestBlindingSpecTestVectors(t *testing.T) {
 	}{
 		{
 			encoded: "011a0000000000000000000000000000000000000000000000000000020800000000000006c10a0800240000009627100c06000b69e505dc0e00fd023103123456",
-			expectedPaymentData: &BlindedRouteData{
-				ShortChannelID: &lnwire.ShortChannelID{
+			expectedPaymentData: NewBlindedRouteData(
+				lnwire.ShortChannelID{
 					BlockHeight: 0,
 					TxIndex:     0,
 					TxPosition:  1729,
 				},
-				RelayInfo: &PaymentRelayInfo{
+				nil,
+				PaymentRelayInfo{
 					CltvExpiryDelta: 36,
 					FeeRate:         150,
 					BaseFee:         10000,
 				},
-				Constraints: &PaymentConstraints{
+				&PaymentConstraints{
 					MaxCltvExpiry:   748005,
 					HtlcMinimumMsat: 1500,
 				},
-				Features: lnwire.NewFeatureVector(
+				lnwire.NewFeatureVector(
 					lnwire.NewRawFeatureVector(),
 					lnwire.Features,
 				),
-			},
+			),
 		},
 		{
 			encoded: "020800000000000004510821031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f0a0800300000006401f40c06000b69c105dc0e00",
-			expectedPaymentData: &BlindedRouteData{
-				ShortChannelID: &lnwire.ShortChannelID{
+			expectedPaymentData: NewBlindedRouteData(
+				lnwire.ShortChannelID{
 					TxPosition: 1105,
 				},
-				NextBlindingOverride: nextBlindingOverride,
-				RelayInfo: &PaymentRelayInfo{
+				nextBlindingOverride,
+				PaymentRelayInfo{
 					CltvExpiryDelta: 48,
 					FeeRate:         100,
 					BaseFee:         500,
 				},
-				Constraints: &PaymentConstraints{
+				&PaymentConstraints{
 					MaxCltvExpiry:   747969,
 					HtlcMinimumMsat: 1500,
 				},
-				Features: lnwire.NewFeatureVector(
+				lnwire.NewFeatureVector(
 					lnwire.NewRawFeatureVector(),
 					lnwire.Features,
-				),
-			},
+				)),
 		},
 	}
 
