@@ -45,6 +45,7 @@ import (
 	"github.com/lightningnetwork/lnd/queue"
 	"github.com/lightningnetwork/lnd/subscribe"
 	"github.com/lightningnetwork/lnd/ticker"
+	"github.com/lightningnetwork/lnd/tlv"
 	"github.com/lightningnetwork/lnd/watchtower/wtclient"
 )
 
@@ -1983,10 +1984,17 @@ func messageSummary(msg lnwire.Message) string {
 			msg.FeeSatoshis)
 
 	case *lnwire.UpdateAddHTLC:
+		var blindingPoint *btcec.PublicKey
+		msg.BlindingPoint.WhenSome(
+			func(b tlv.RecordT[tlv.TlvType0, *btcec.PublicKey]) {
+				blindingPoint = b.Val
+			},
+		)
+
 		return fmt.Sprintf("chan_id=%v, id=%v, amt=%v, expiry=%v, "+
-			"hash=%x, blinding_point=%s", msg.ChanID, msg.ID,
+			"hash=%x, blinding_point=%x", msg.ChanID, msg.ID,
 			msg.Amount, msg.Expiry, msg.PaymentHash[:],
-			msg.BlindingPoint)
+			blindingPoint.SerializeCompressed())
 
 	case *lnwire.UpdateFailHTLC:
 		return fmt.Sprintf("chan_id=%v, id=%v, reason=%x", msg.ChanID,
