@@ -1364,8 +1364,11 @@ func TestLightningWireProtocol(t *testing.T) {
 					return
 				}
 
-				blinding := blindingPoint(*pubkey)
-				req.BlindingPoint = &blinding
+				req.BlindingPoint = tlv.SomeRecordT(
+					tlv.NewPrimitiveRecord[tlv.TlvType0](
+						pubkey,
+					),
+				)
 			}
 
 			v[0] = reflect.ValueOf(*req)
