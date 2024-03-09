@@ -2,7 +2,6 @@ package hop
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -12,11 +11,6 @@ import (
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/record"
 )
-
-// ErrNoNextChanID is returned when a blinded payment does not specify the
-// next short channel ID.
-var ErrNoNextChanID = errors.New("next channel id required for blinded " +
-	"payments")
 
 // Iterator is an interface that abstracts away the routing information
 // included in HTLC's which includes the entirety of the payment path of an
@@ -192,39 +186,22 @@ func deriveForwardingInfo(data *record.BlindedRouteData,
 	// have the correct values for the final hop in the blinded route
 	// (which does not have relay info set).
 	var (
-		nextHop lnwire.ShortChannelID
-		expiry  = incomingCltv
-		fwdAmt  = incomingAmt
+		expiry = incomingCltv
+		fwdAmt = incomingAmt
 	)
 
-	// We require a short channel ID to be present for blinded payments, as
-	// we do not currently support node id based blinded payments (and the
-	// specification requires inclusion of a short channel ID in blinded
-	// payment-related encrypted data, so recipients should provide us
-	// with one).
-	//
-	// TODO: use node id if we add support node id based forwarding.
-	if data.ShortChannelID != nil {
-		nextHop = *data.ShortChannelID
-	} else {
-		return nil, ErrNoNextChanID
+	fwdAmt, err := calculateForwardingAmount(
+		incomingAmt, data.RelayInfo.Val.BaseFee,
+		data.RelayInfo.Val.FeeRate,
+	)
+	if err != nil {
+		return nil, err
 	}
 
-	if data.RelayInfo != nil {
-		var err error
-		fwdAmt, err = calculateForwardingAmount(
-			incomingAmt, data.RelayInfo.BaseFee,
-			data.RelayInfo.FeeRate,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		expiry = incomingCltv - uint32(data.RelayInfo.CltvExpiryDelta)
-	}
+	expiry = incomingCltv - uint32(data.RelayInfo.Val.CltvExpiryDelta)
 
 	return &ForwardingInfo{
-		NextHop:         nextHop,
+		NextHop:         data.ShortChannelID.Val,
 		AmountToForward: fwdAmt,
 		OutgoingCTLV:    expiry,
 	}, nil
