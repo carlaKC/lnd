@@ -6656,6 +6656,14 @@
         }
       }
     },
+    "lnrpcQuiescenceResponse": {
+      "type": "object",
+      "properties": {
+        "initiator": {
+          "type": "boolean"
+        }
+      }
+    },
     "lnrpcRPCMessage": {
       "type": "object",
       "properties": {
