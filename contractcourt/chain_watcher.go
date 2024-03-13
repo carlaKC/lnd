@@ -307,8 +307,11 @@ func (c *chainWatcher) Start() error {
 		err error
 	)
 	if chanState.ChanType.IsTaproot() {
+		fundingOpts := fn.MapOptionZ(
+			chanState.TapscriptRoot, lnwallet.TapscriptRootToOpt,
+		)
 		c.fundingPkScript, _, err = input.GenTaprootFundingScript(
-			localKey, remoteKey, 0,
+			localKey, remoteKey, 0, fundingOpts...,
 		)
 		if err != nil {
 			return err
