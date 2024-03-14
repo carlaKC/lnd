@@ -18,6 +18,7 @@ import (
 	"github.com/lightningnetwork/lnd/channeldb/models"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/contractcourt"
+	"github.com/lightningnetwork/lnd/htlcswitch/hodl"
 	"github.com/lightningnetwork/lnd/htlcswitch/hop"
 	"github.com/lightningnetwork/lnd/kvdb"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -222,6 +223,12 @@ type Config struct {
 
 	// IsAlias returns whether or not a given SCID is an alias.
 	IsAlias func(scid lnwire.ShortChannelID) bool
+
+	// hodl.Mask is a bitvector composed of hodl.Flags, specifying breakpoints
+	// for HTLC forwarding internal to the switch.
+	//
+	// NOTE: This should only be used for testing.
+	HodlMask hodl.Mask
 }
 
 // Switch is the central messaging bus for all incoming/outgoing HTLCs.
@@ -702,6 +709,19 @@ func (s *Switch) ForwardPackets(linkQuit chan struct{},
 	for _, packet := range packets {
 		switch htlc := packet.htlc.(type) {
 		case *lnwire.UpdateAddHTLC:
+			fmt.Printf("[switch.ForwardPackets()]: encountered ADD! switch link count=%d\n",
+				len(s.linkIndex))
+
+			// If hodl.AddForward mode is active, we exit early to
+			// simulate arbitrary delays in the switch during forwarding.
+			// This can be leveraged to test the switch going down
+			// while trying to forward a batch of HTLCs.
+			if s.cfg.HodlMask.Active(hodl.AddForward) {
+				log.Warnf(hodl.AddForward.Warning())
+				fmt.Printf("%s\n", hodl.AddForward.Warning())
+				continue
+			}
+
 			circuit := newPaymentCircuit(&htlc.PaymentHash, packet)
 			packet.circuit = circuit
 			circuits = append(circuits, circuit)

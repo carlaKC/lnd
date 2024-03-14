@@ -34,8 +34,6 @@ const (
 	// not the exit node.
 	FailIncoming
 
-	// TODO(conner): add  modes for switch breakpoints
-
 	// AddOutgoing drops an outgoing ADD before it is added to the
 	// in-memory commitment state of the link.
 	AddOutgoing
@@ -55,6 +53,11 @@ const (
 	// BogusSettle attempts to settle back any incoming HTLC for which we
 	// are the exit node with a bogus preimage.
 	BogusSettle
+
+	// TODO(conner): add  modes for switch breakpoints
+
+	// AddForward ...
+	AddForward
 )
 
 // String returns a human-readable identifier for a given Flag.
@@ -78,6 +81,8 @@ func (f Flag) String() string {
 		return "Commit"
 	case BogusSettle:
 		return "BogusSettle"
+	case AddForward:
+		return "AddForward"
 	default:
 		return "UnknownHodlFlag"
 	}
@@ -106,6 +111,8 @@ func (f Flag) Warning() string {
 		msg = "will not commit pending channel updates"
 	case BogusSettle:
 		msg = "will settle HTLC with bogus preimage"
+	case AddForward:
+		msg = "will not update switch circuit map for forwarded ADD"
 	default:
 		msg = "incorrect hodl flag usage"
 	}
