@@ -768,7 +768,7 @@ func extractHTLCEndorsement(request HTLCEndorsement) bool {
 		// TODO: add coin flip to set endorsement with some probability
 		// P when the user has not explicitly requested an endorsement
 		// signal.
-		// Note: this is set to true for the purposes of simulation, 
+		// Note: this is set to true for the purposes of simulation,
 		// it should to updated to flip a coin.
 		return true
 

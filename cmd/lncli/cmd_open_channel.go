@@ -251,6 +251,12 @@ var openChannelCommand = cli.Command{
 				"can be pending within the channel at any " +
 				"given time",
 		},
+		cli.Uint64Flag{
+			Name: "remote_max_htlcs",
+			Usage: "(optional) the maximum number of HTLCs that " +
+				"can be pending within the channel at" +
+				"any given time",
+		},
 		cli.StringFlag{
 			Name: "channel_type",
 			Usage: fmt.Sprintf("(optional) the type of channel to "+
@@ -321,12 +327,15 @@ func openChannel(ctx *cli.Context) error {
 		SpendUnconfirmed:           minConfs == 0,
 		CloseAddress:               ctx.String("close_address"),
 		RemoteMaxValueInFlightMsat: ctx.Uint64("remote_max_value_in_flight_msat"),
-		MaxLocalCsv:                uint32(ctx.Uint64("max_local_csv")),
-		ZeroConf:                   ctx.Bool("zero_conf"),
-		ScidAlias:                  ctx.Bool("scid_alias"),
-		RemoteChanReserveSat:       ctx.Uint64("remote_reserve_sats"),
-		FundMax:                    ctx.Bool("fundmax"),
-		Memo:                       ctx.String("memo"),
+		RemoteMaxHtlcs: uint32(
+			ctx.Uint64("remote_max_htlcs"),
+		),
+		MaxLocalCsv:          uint32(ctx.Uint64("max_local_csv")),
+		ZeroConf:             ctx.Bool("zero_conf"),
+		ScidAlias:            ctx.Bool("scid_alias"),
+		RemoteChanReserveSat: ctx.Uint64("remote_reserve_sats"),
+		FundMax:              ctx.Bool("fundmax"),
+		Memo:                 ctx.String("memo"),
 	}
 
 	switch {
