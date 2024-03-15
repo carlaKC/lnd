@@ -5943,7 +5943,7 @@ func (lc *LightningChannel) ReceiveRevocation(revMsg *lnwire.RevokeAndAck) (
 				// once the ForwardingPackage is written to disk below.
 				// The blinding point will be available to our the incoming
 				// link after we restore our in-memory state after a restart!
-				// BlindingPoint: lnwire.NewBlindingPoint(pd.BlindingPoint),
+				BlindingPoint: lnwire.NewBlindingPoint(pd.BlindingPoint),
 			}
 			copy(htlc.OnionBlob[:], pd.OnionBlob)
 			logUpdate.UpdateMsg = htlc
