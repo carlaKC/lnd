@@ -269,6 +269,10 @@ func (b *BlindingKit) DecryptAndValidateFwdInfo(payload *Payload,
 	// information.
 	if err := ValidateBlindedRouteData(
 		routeData, b.IncomingAmount, b.IncomingCltv,
+		// If the blinding kit has a non-nil blinding
+		// point, then we got it from update_add_htlc
+		// and we're a relaying node.
+		b.UpdateAddBlinding.IsSome(),
 	); err != nil {
 		return nil, err
 	}
