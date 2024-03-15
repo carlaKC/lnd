@@ -566,6 +566,7 @@ func TestValidateBlindedRouteData(t *testing.T) {
 	tests := []struct {
 		name             string
 		data             *record.BlindedRouteData
+		relayingNode     bool
 		incomingAmount   lnwire.MilliSatoshi
 		incomingTimelock uint32
 		err              error
@@ -582,9 +583,11 @@ func TestValidateBlindedRouteData(t *testing.T) {
 				nil,
 			),
 			incomingTimelock: 200,
+			relayingNode:     true,
 			err: hop.ErrInvalidPayload{
 				Type:      record.LockTimeOnionType,
 				Violation: hop.InsufficientViolation,
+				RouteRole: hop.RouteRoleRelaying,
 			},
 		},
 		{
@@ -604,6 +607,7 @@ func TestValidateBlindedRouteData(t *testing.T) {
 			err: hop.ErrInvalidPayload{
 				Type:      record.LockTimeOnionType,
 				Violation: hop.InsufficientViolation,
+				RouteRole: hop.RouteRoleIntroduction,
 			},
 		},
 		{
@@ -621,6 +625,7 @@ func TestValidateBlindedRouteData(t *testing.T) {
 			err: hop.ErrInvalidPayload{
 				Type:      record.AmtOnionType,
 				Violation: hop.InsufficientViolation,
+				RouteRole: hop.RouteRoleIntroduction,
 			},
 		},
 		{
@@ -660,6 +665,7 @@ func TestValidateBlindedRouteData(t *testing.T) {
 			err: hop.ErrInvalidPayload{
 				Type:      14,
 				Violation: hop.IncludedViolation,
+				RouteRole: hop.RouteRoleIntroduction,
 			},
 		},
 		{
@@ -690,6 +696,7 @@ func TestValidateBlindedRouteData(t *testing.T) {
 			err := hop.ValidateBlindedRouteData(
 				testCase.data, testCase.incomingAmount,
 				testCase.incomingTimelock,
+				testCase.relayingNode,
 			)
 			require.Equal(t, testCase.err, err)
 		})
