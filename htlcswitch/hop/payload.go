@@ -133,6 +133,24 @@ func NewLegacyPayload(f *sphinx.HopData) *Payload {
 	}
 }
 
+// NOTE(10/26/22): This function is currently only used to get around
+// the fact that customRecords is unexported and is required to be set.
+// I don't think a function like this would have much utility otherwise.
+// Given that we use TLV en/decoding I am a bit unsure how this function
+// will behave/get access to the information it would need.
+// The data included in a TLV payload is highly variable. That is why it makes
+// sense to define a struct and then TLV encode each of the structs types
+// that the user sets.
+func NewTLVPayload() *Payload {
+
+	// Set the unexported customRecords field so that we can carry
+	// on with our Link testing.
+	return &Payload{
+		FwdInfo:       ForwardingInfo{},
+		customRecords: make(record.CustomSet),
+	}
+}
+
 // NewPayloadFromReader builds a new Hop from the passed io.Reader. The reader
 // should correspond to the bytes encapsulated in a TLV onion payload. The
 // final hop bool signals that this payload was the final packet parsed by
@@ -450,6 +468,12 @@ func (h *Payload) CustomRecords() record.CustomSet {
 // onion payload.
 func (h *Payload) EncryptedData() []byte {
 	return h.encryptedData
+}
+
+// EncryptedData returns the route blinding encrypted data parsed from the
+// onion payload.
+func (h *Payload) SetEncryptedData(data []byte) {
+	h.encryptedData = data
 }
 
 // BlindingPoint returns the route blinding point parsed from the onion payload.

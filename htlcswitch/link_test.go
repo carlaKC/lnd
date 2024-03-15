@@ -261,6 +261,8 @@ func TestChannelLinkRevThenSig(t *testing.T) {
 	}
 
 	// Restart Alice so she sends and accepts ChannelReestablish.
+	// TODO(10/22/22): Show that we correctly re process HTLCs in
+	// a blinded route after restart too!
 	alice.restart(false, true)
 
 	ctx.aliceLink = alice.link
@@ -643,6 +645,186 @@ func testChannelLinkMultiHopPayment(t *testing.T,
 	}
 
 	time.Sleep(20 * time.Second)
+}
+
+/*
+
+	Blinded Route
+
+	+-----------+		+-----------+		+-----------+		+-----------+
+	|  Alice    |		|   Bob	    |		|   Carol   |		|  Dave	    |
+	|	    +-----------+->	    +-----------+->	     +-----------+->	    |
+	|  Sender   |		|   Intro   |		|  (Blind)  |		|  (Blind)  |
+	+-----------+		+-----------+		+-----------+		+-----------+
+
+	NOTE(11/20/22): Tests might be best performed against a "4 hop network"
+	as this would facilitate easy exercise for each of introduction node,
+	blind intermediate node, and blind recipient node. Absent adding a
+	newFourHopNetwork() or newNHopNetwork() we do our best here.
+
+*/
+
+var (
+	amount                    = lnwire.NewMSatFromSatoshis(btcutil.SatoshiPerBitcoin)
+	_, ephemeralBlindingPoint = btcec.PrivKeyFromBytes([]byte("test private key"))
+)
+
+func TestChannelLinkBlindHopReprocessing2024(t *testing.T) {
+	t.Parallel()
+
+	channels, restoreChannelsFromDb, err := createClusterChannels(
+		// channels, _, err := createClusterChannels(
+		t, btcutil.SatoshiPerBitcoin*3, btcutil.SatoshiPerBitcoin*5,
+	)
+	require.NoError(t, err, "unable to create channel")
+
+	// Do not configure the links to support blind hop processing.
+	n := newThreeHopNetwork(t, channels.aliceToBob, channels.bobToAlice,
+		channels.bobToCarol, channels.carolToBob, testStartingHeight)
+
+	if err := n.start(); err != nil {
+		t.Fatalf("unable to start three hop network: %v", err)
+	}
+	t.Cleanup(n.stop)
+
+	debug := false
+	if debug {
+		// Log messages that alice receives from bob.
+		n.aliceServer.intersect(createLogFunc("[alice]<-bob<-carol: ",
+			n.aliceChannelLink.ChanID()))
+
+		// Log messages that bob receives from alice.
+		n.bobServer.intersect(createLogFunc("alice->[bob]->carol: ",
+			n.firstBobChannelLink.ChanID()))
+
+		// Log messages that bob receives from carol.
+		n.bobServer.intersect(createLogFunc("alice<-[bob]<-carol: ",
+			n.secondBobChannelLink.ChanID()))
+
+		// Log messages that carol receives from bob.
+		n.carolServer.intersect(createLogFunc("alice->bob->[carol]",
+			n.carolChannelLink.ChanID()))
+	}
+
+	// Set Bob in hodl AddOutgoing mode so that he won't immediately
+	// forward our blind ADD. We can then, restart Bob's node, removing
+	// this flag, and verify that he correctly reprocessed the blind ADD
+	// from disk and forwards it onwards to Carol.
+	// n.firstBobChannelLink.cfg.HodlMask = hodl.AddOutgoing.Mask() // Does NOT block forward!
+	// n.secondBobChannelLink.cfg.HodlMask = hodl.AddOutgoing.Mask() // This DOES block forward! AFTER the Switch has processed and committed circuits and forwarded to outgoing link
+	n.bobServer.htlcSwitch.cfg.HodlMask = hodl.AddForward.Mask()
+
+	// Generate a payment preimage.
+	preimage, rhash, _ := generatePaymentSecret()
+	payAddr, _ := generatePaymentAddress()
+
+	// Generate blinded hops, taking care to use the payment
+	// preimage as the path_id for the final hop.
+	// NOTE(11/25/22): In order to observe what we want to in this test,
+	// we may need to generate our own htlc & onion with blind hops.
+	// Alice will forward an HTLC with blinding point in the TLV extension
+	// of the UpdateAddHTLC message _as if_ she was the introduction node.
+	// This will allow us to test Bob's behavior as an intermediate/forwarding
+	// node inside a blinded route.
+	amount := lnwire.NewMSatFromSatoshis(btcutil.SatoshiPerBitcoin)
+	htlcAmt, totalTimelock, hops := generateBlindHops(
+		amount, testStartingHeight, preimage[:],
+		n.firstBobChannelLink, n.carolChannelLink,
+	)
+
+	blob, err := generateRoute(hops...)
+	require.NoError(t, err, "unable to serialize onion blob")
+
+	// Make a payment attempt.
+	invoice, htlc, pid, err := generatePaymentWithPreimage(
+		amount, htlcAmt, totalTimelock, blob, &preimage, rhash, payAddr,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	htlc.BlindingPoint = lnwire.NewBlindingPoint(ephemeralBlindingPoint)
+
+	// Add the invoice to Carol's invoice registry so that she's
+	// expecting payment.
+	ctx := context.Background()
+	err = n.carolServer.registry.AddInvoice(ctx, *invoice, htlc.PaymentHash)
+	require.NoError(t, err, "unable to add invoice in carol registry")
+
+	// Check that Carol invoice was settled and bandwidth of HTLC
+	// links were changed.
+	inv, err := n.carolServer.registry.LookupInvoice(ctx, htlc.PaymentHash)
+	require.NoError(t, err, "unable to get invoice")
+	if inv.State != invpkg.ContractOpen {
+		t.Fatal("carol's invoice isn't active/open")
+	}
+
+	// Send the HTLC from Alice to Carol, via Bob.
+	err = n.aliceServer.htlcSwitch.SendHTLC(
+		n.firstBobChannelLink.ShortChanID(), pid, htlc,
+	)
+	require.NoError(t, err, "unable to send payment to carol")
+
+	// See what happens if we restore channels from disk.
+	// Prior to restarting we clear Bob's hodl mask so we
+	// forward the ADD after restarting.
+	// NOTE(11/25/22): I think this restarts all channels,
+	// when we could/should get away with only restarting
+	// Bob's node.
+	time.Sleep(1 * time.Second)
+	n.secondBobChannelLink.cfg.HodlMask = hodl.MaskNone
+	n.bobServer.htlcSwitch.cfg.HodlMask = hodl.MaskNone
+	t.Log("TEST: Removing HodlMask from Bob's link/switch")
+
+	// Restart Bobs's node.
+	channels, err = restoreChannelsFromDb()
+	if err != nil {
+		t.Fatalf("unable to restore channels from database: %v", err)
+	}
+	// time.Sleep(3 * time.Second)
+
+	n = newThreeHopNetwork(t, channels.aliceToBob, channels.bobToAlice,
+		channels.bobToCarol, channels.carolToBob, testStartingHeight)
+
+	// NOTE: Restarting the whole test network as we do above wipes the
+	// invoice registry for all nodes. We need to restore Carol's registry
+	// manually after restart so that she is still expecting the payment.
+	err = n.carolServer.registry.AddInvoice(ctx, *invoice, htlc.PaymentHash)
+	require.NoError(t, err, "unable to add invoice in carol registry")
+
+	if err := n.start(); err != nil {
+		t.Fatalf("unable to start three hop network: %v", err)
+	}
+	t.Cleanup(n.stop)
+
+	// Confirm that Alice receives the proper payment result.
+	resultChan, err := n.aliceServer.htlcSwitch.GetAttemptResult(
+		pid, htlc.PaymentHash, newMockDeobfuscator(),
+	)
+	require.NoError(t, err, "unable to get payment result")
+
+	select {
+	case result, ok := <-resultChan:
+		if !ok {
+			t.Fatalf("unexpected shutdown")
+		}
+
+		// The Switch fails our payment back.
+		// assertFailureCode(t, result.Error, lnwire.CodeTemporaryChannelFailure)
+		// assertFailureCode(t, result.Error, lnwire.CodeInvalidOnionBlinding)
+		require.NoError(t, result.Error)
+
+	case <-time.After(10 * time.Second):
+		t.Fatalf("payment result did not arrive")
+	}
+
+	// Check that Carol invoice was settled and bandwidth of HTLC
+	// links were changed.
+	inv, err = n.carolServer.registry.LookupInvoice(ctx, htlc.PaymentHash)
+	require.NoError(t, err, "unable to get invoice")
+	if inv.State != invpkg.ContractSettled {
+		t.Fatal("carol's invoice haven't been settled")
+	}
+
 }
 
 // TestChannelLinkCancelFullCommitment tests the ability for links to cancel
