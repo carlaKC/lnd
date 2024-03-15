@@ -262,6 +262,7 @@ func TestDecryptAndValidateFwdInfo(t *testing.T) {
 			expectedErr: ErrInvalidPayload{
 				Type:      record.LockTimeOnionType,
 				Violation: InsufficientViolation,
+				RouteRole: RouteRoleRelaying,
 			},
 		},
 		{
