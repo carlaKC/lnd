@@ -3479,9 +3479,9 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 			// create the outgoing HTLC using the parameters as
 			// specified in the forwarding info.
 			addMsg := &lnwire.UpdateAddHTLC{
-				Expiry:      fwdInfo.OutgoingCTLV,
-				Amount:      fwdInfo.AmountToForward,
-				PaymentHash: pd.RHash,
+				Expiry:        fwdInfo.OutgoingCTLV,
+				Amount:        fwdInfo.AmountToForward,
+				PaymentHash:   pd.RHash,
 				BlindingPoint: fwdInfo.NextBlinding,
 			}
 
