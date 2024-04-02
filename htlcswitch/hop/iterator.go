@@ -137,9 +137,11 @@ type BlindingProcessor interface {
 // of forwarding information for a blinded hop.
 type BlindedForwardProcessor interface {
 	// DecryptAndValidateFwdInfo decrypts a blob of encrypted data and
-	// validates the contents in the blob and calculates the forwarding
-	// information for the blinded forward.
-	DecryptAndValidateFwdInfo(encryptedData []byte) ([]byte, error)
+	// validates the contents in the blob (both against the incoming HTLC's
+	// values and the contents of the higher level payload) and calculates
+	// the forwarding information for the blinded forward.
+	DecryptAndValidateFwdInfo(payload *Payload, isFinalHop bool,
+		payloadParsed map[tlv.Type][]byte) ([]byte, error)
 }
 
 // BlindingKit contains the components required to extract forwarding
@@ -162,7 +164,8 @@ type BlindingKit struct {
 
 // DecryptAndValidateFwdInfo performs all operations required to decrypt and
 // validate a blinded route.
-func (b *BlindingKit) DecryptAndValidateFwdInfo(encryptedData []byte) (
+func (b *BlindingKit) DecryptAndValidateFwdInfo(payload *Payload,
+	isFinalHop bool, payloadParsed map[tlv.Type][]byte) (
 	*ForwardingInfo, error) {
 
 	// When we have encrypted data present, we've either got a blinding
@@ -182,7 +185,7 @@ func (b *BlindingKit) DecryptAndValidateFwdInfo(encryptedData []byte) (
 	}
 
 	decrypted, err := b.Processor.DecryptBlindedHopData(
-		blindingPoint, encryptedData,
+		blindingPoint, payload.encryptedData,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt blinded "+
@@ -196,6 +199,16 @@ func (b *BlindingKit) DecryptAndValidateFwdInfo(encryptedData []byte) (
 			ErrDecodeFailed, err)
 	}
 
+	// Validate the contents of the payload against the values we've
+	// just pulled out of the encrypted data blob.
+	_, err = ValidatePayloadWithBlinded(
+		payload, isFinalHop, payloadParsed, b.UpdateAddBlinding,
+	)
+	if err != nil {
+		return nil, err
+	}
+	// Validate the data in the blinded route against our incoming htlc's
+	// information.
 	if err := ValidateBlindedRouteData(
 		routeData, b.IncomingAmount, b.IncomingCltv,
 	); err != nil {

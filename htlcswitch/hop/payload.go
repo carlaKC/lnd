@@ -484,3 +484,79 @@ func ValidateBlindedRouteData(blindedData *record.BlindedRouteData,
 
 	return nil
 }
+
+// ValidatePayloadWithBlinded validates a payload against the contents of
+// its
+func ValidatePayloadWithBlinded(payload *Payload, isFinalHop bool,
+	payloadParsed map[tlv.Type][]byte,
+	updateAddBlinding lnwire.BlindingPointRecord) (*btcec.PublicKey,
+	error) {
+
+	hasPayloadBlinding := payload.blindingPoint != nil
+	hasEncryptedData := payload.encryptedData != nil
+	hasUpdateAddBlindingPoint := updateAddBlinding.IsSome()
+
+	// hasBlindingPoint is true for introduction and intermediate nodes
+	// in blinded paths.
+	hasBlindingPoint := hasPayloadBlinding || hasUpdateAddBlindingPoint
+
+	switch {
+	// If a blinding point is provided, we expect encrypted data.
+	case hasBlindingPoint && !hasEncryptedData:
+		return nil, ErrInvalidPayload{
+			Type:      record.EncryptedDataOnionType,
+			Violation: OmittedViolation,
+			FinalHop:  isFinalHop,
+		}
+
+	// A blinding point should not be set in both update_add_htlc and the
+	// onion payload - only one is expected.
+	case hasPayloadBlinding && hasUpdateAddBlindingPoint:
+		return nil, ErrInvalidPayload{
+			Type:      record.BlindingPointOnionType,
+			Violation: IncludedViolation,
+			FinalHop:  isFinalHop,
+		}
+
+	// Blinded routes restrict the presence of TLVs more strictly than
+	// regular routes, check that intermediate and final hops only have
+	// the TLVs the spec allows them to have.
+	case hasEncryptedData:
+		allowedTLVs := map[tlv.Type]bool{
+			record.EncryptedDataOnionType: true,
+			record.BlindingPointOnionType: true,
+		}
+
+		if isFinalHop {
+			allowedTLVs[record.AmtOnionType] = true
+			allowedTLVs[record.LockTimeOnionType] = true
+			allowedTLVs[record.TotalAmtMsatBlindedType] = true
+		}
+		for tlvType := range payloadParsed {
+			if _, ok := allowedTLVs[tlvType]; ok {
+				continue
+			}
+
+			return nil, ErrInvalidPayload{
+				Type:      tlvType,
+				Violation: IncludedViolation,
+				FinalHop:  isFinalHop,
+			}
+		}
+	}
+
+	// We've validated that only one of the blinding keys is set, so we
+	// can just return the non-nil one here.
+	if hasPayloadBlinding {
+		return payload.BlindingPoint(), nil
+	}
+
+	updateBlinding, err := updateAddBlinding.UnwrapOrErr(
+		fmt.Errorf("payload blinding not set, expected update add"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return updateBlinding.Val, nil
+}

@@ -251,7 +251,11 @@ func TestDecryptAndValidateFwdInfo(t *testing.T) {
 			}
 
 			_, err := kit.DecryptAndValidateFwdInfo(
-				testCase.data,
+				&Payload{
+					encryptedData: testCase.data,
+				},
+				false,
+				make(map[tlv.Type][]byte),
 			)
 			require.ErrorIs(t, err, testCase.expectedErr)
 		})
