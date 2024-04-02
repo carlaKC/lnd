@@ -2425,7 +2425,11 @@ func createBreachRetributionLegacy(revokedLog *channeldb.ChannelCommitment,
 			continue
 		}
 
-		entry := channeldb.NewHTLCEntryFromHTLC(htlc)
+		entry, err := channeldb.NewHTLCEntryFromHTLC(htlc)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+
 		hr, err := createHtlcRetribution(
 			chanState, keyRing, commitHash,
 			commitmentSecret, leaseExpiry, entry,
