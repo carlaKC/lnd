@@ -207,6 +207,7 @@ func PayDescsFromRemoteLogUpdates(chanID lnwire.ShortChannelID, height uint64,
 					Index:  uint16(i),
 				},
 				BlindingPoint: pd.BlindingPoint,
+				CustomRecords: pd.CustomRecords.Copy(),
 			}
 			pd.OnionBlob = make([]byte, len(wireMsg.OnionBlob))
 			copy(pd.OnionBlob[:], wireMsg.OnionBlob[:])
@@ -529,6 +530,7 @@ func (c *commitment) toDiskCommit(
 			LogIndex:      htlc.LogIndex,
 			Incoming:      false,
 			BlindingPoint: htlc.BlindingPoint,
+			CustomRecords: htlc.CustomRecords.Copy(),
 		}
 		copy(h.OnionBlob[:], htlc.OnionBlob)
 
@@ -554,8 +556,10 @@ func (c *commitment) toDiskCommit(
 			LogIndex:      htlc.LogIndex,
 			Incoming:      true,
 			BlindingPoint: htlc.BlindingPoint,
+			CustomRecords: htlc.CustomRecords.Copy(),
 		}
 		copy(h.OnionBlob[:], htlc.OnionBlob)
+
 		if whoseCommit.IsLocal() && htlc.sig != nil {
 			h.Signature = htlc.sig.Serialize()
 		}
@@ -653,6 +657,7 @@ func (lc *LightningChannel) diskHtlcToPayDesc(feeRate chainfee.SatPerKWeight,
 		theirPkScript:      theirP2WSH,
 		theirWitnessScript: theirWitnessScript,
 		BlindingPoint:      htlc.BlindingPoint,
+		CustomRecords:      htlc.CustomRecords.Copy(),
 	}, nil
 }
 
@@ -5725,6 +5730,9 @@ func (lc *LightningChannel) htlcAddDescriptor(htlc *lnwire.UpdateAddHTLC,
 		OnionBlob:      htlc.OnionBlob[:],
 		OpenCircuitKey: openKey,
 		BlindingPoint:  htlc.BlindingPoint,
+		// TODO(guggero): Add custom records from HTLC here once we have
+		// the custom records in the HTLC struct (later commits in this
+		// PR).
 	}
 }
 
@@ -5765,7 +5773,9 @@ func (lc *LightningChannel) validateAddHtlc(pd *PaymentDescriptor,
 // ReceiveHTLC adds an HTLC to the state machine's remote update log. This
 // method should be called in response to receiving a new HTLC from the remote
 // party.
-func (lc *LightningChannel) ReceiveHTLC(htlc *lnwire.UpdateAddHTLC) (uint64, error) {
+func (lc *LightningChannel) ReceiveHTLC(htlc *lnwire.UpdateAddHTLC) (uint64,
+	error) {
+
 	lc.Lock()
 	defer lc.Unlock()
 
@@ -5783,6 +5793,9 @@ func (lc *LightningChannel) ReceiveHTLC(htlc *lnwire.UpdateAddHTLC) (uint64, err
 		HtlcIndex:     lc.remoteUpdateLog.htlcCounter,
 		OnionBlob:     htlc.OnionBlob[:],
 		BlindingPoint: htlc.BlindingPoint,
+		// TODO(guggero): Add custom records from HTLC here once we have
+		// the custom records in the HTLC struct (later commits in this
+		// PR).
 	}
 
 	localACKedIndex := lc.remoteCommitChain.tail().ourMessageIndex
