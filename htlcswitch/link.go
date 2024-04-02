@@ -3345,9 +3345,10 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				// Otherwise, it was already processed, we can
 				// can collect it and continue.
 				addMsg := &lnwire.UpdateAddHTLC{
-					Expiry:      fwdInfo.OutgoingCTLV,
-					Amount:      fwdInfo.AmountToForward,
-					PaymentHash: pd.RHash,
+					Expiry:        fwdInfo.OutgoingCTLV,
+					Amount:        fwdInfo.AmountToForward,
+					PaymentHash:   pd.RHash,
+					BlindingPoint: fwdInfo.NextBlinding,
 				}
 
 				// Finally, we'll encode the onion packet for
@@ -3393,6 +3394,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				Expiry:      fwdInfo.OutgoingCTLV,
 				Amount:      fwdInfo.AmountToForward,
 				PaymentHash: pd.RHash,
+				BlindingPoint: fwdInfo.NextBlinding,
 			}
 
 			// Finally, we'll encode the onion packet for the
