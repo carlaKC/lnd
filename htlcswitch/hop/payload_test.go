@@ -480,7 +480,7 @@ func testDecodeHopPayloadValidation(t *testing.T, test decodePayloadTest) {
 	)
 
 	p, _, err := hop.NewPayloadFromReader(
-		bytes.NewReader(test.payload), test.isFinalHop,
+		bytes.NewReader(test.payload), test.isFinalHop, false,
 	)
 	if !reflect.DeepEqual(test.expErr, err) {
 		t.Fatalf("expected error mismatch, want: %v, got: %v",
@@ -691,6 +691,7 @@ func TestValidateBlindedRouteData(t *testing.T) {
 			err := hop.ValidateBlindedRouteData(
 				testCase.data, testCase.incomingAmount,
 				testCase.incomingTimelock,
+				0,
 			)
 			require.Equal(t, testCase.err, err)
 		})
@@ -746,7 +747,8 @@ func TestValidatePayloadWithBlinded(t *testing.T) {
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			err := hop.ValidatePayloadWithBlinded(
-				testCase.isFinal, testCase.parsed,
+				testCase.isFinal, hop.RouteRoleRelaying,
+				testCase.parsed,
 			)
 
 			// We can't determine our exact error because we

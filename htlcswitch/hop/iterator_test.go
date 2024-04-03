@@ -233,6 +233,7 @@ func TestDecryptAndValidateFwdInfo(t *testing.T) {
 			expectedErr: ErrInvalidPayload{
 				Type:      record.BlindingPointOnionType,
 				Violation: IncludedViolation,
+				RouteRole: RouteRoleIntroduction,
 			},
 		},
 		{
@@ -262,6 +263,7 @@ func TestDecryptAndValidateFwdInfo(t *testing.T) {
 			expectedErr: ErrInvalidPayload{
 				Type:      record.LockTimeOnionType,
 				Violation: InsufficientViolation,
+				RouteRole: RouteRoleRelaying,
 			},
 		},
 		{
