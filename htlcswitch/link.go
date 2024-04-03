@@ -1519,6 +1519,9 @@ func (l *channelLink) processHtlcResolution(resolution invoices.HtlcResolution,
 
 		l.sendHTLCError(
 			htlc.pd, failure, htlc.obfuscator, true,
+			// Note: we do not yet allow receiving to blinded
+			// routes so we cannot have a blinded receive here.
+			hop.RouteRoleCleartext,
 		)
 		return nil
 
@@ -3293,6 +3296,15 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 
 		heightNow := l.cfg.BestHeight()
 
+		// We don't know whether we're an introduction node (blinding
+		// in payload that we just failed to process), so we do our
+		// best guess at route role based on the information we have,
+		// and then if we managed to parse the payload overwrite with
+		// a more precise value.
+		routeRole := hop.NewRouteRole(
+			pd.BlindingPoint.IsSome(), false,
+		)
+
 		pld, err := chanIterator.HopPayload()
 		if err != nil {
 			// If we're unable to process the onion payload, or we
@@ -3302,6 +3314,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 			var failedType uint64
 			if e, ok := err.(hop.ErrInvalidPayload); ok {
 				failedType = uint64(e.Type)
+				routeRole = e.RouteRole
 			}
 
 			// TODO: currently none of the test unit infrastructure
@@ -3313,6 +3326,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 			failure := lnwire.NewInvalidOnionPayload(failedType, 0)
 			l.sendHTLCError(
 				pd, NewLinkError(failure), obfuscator, false,
+				routeRole,
 			)
 
 			l.log.Errorf("unable to decode forwarding "+
@@ -3334,6 +3348,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 			)
 			l.sendHTLCError(
 				pd, NewLinkError(failure), obfuscator, false,
+				routeRole,
 			)
 
 			l.log.Error("rejected htlc that uses use as an " +
@@ -3452,7 +3467,11 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				)
 
 				l.sendHTLCError(
-					pd, NewLinkError(failure), obfuscator, false,
+					pd, NewLinkError(failure), obfuscator,
+					false, hop.NewRouteRole(
+						pd.BlindingPoint.IsSome(),
+						pld.BlindingPoint() != nil,
+					),
 				)
 				continue
 			}
@@ -3544,7 +3563,9 @@ func (l *channelLink) processExitHop(pd *lnwallet.PaymentDescriptor,
 		failure := NewLinkError(
 			lnwire.NewFinalIncorrectHtlcAmount(pd.Amount),
 		)
-		l.sendHTLCError(pd, failure, obfuscator, true)
+		l.sendHTLCError(
+			pd, failure, obfuscator, true, hop.RouteRoleCleartext,
+		)
 
 		return nil
 	}
@@ -3559,7 +3580,9 @@ func (l *channelLink) processExitHop(pd *lnwallet.PaymentDescriptor,
 		failure := NewLinkError(
 			lnwire.NewFinalIncorrectCltvExpiry(pd.Timeout),
 		)
-		l.sendHTLCError(pd, failure, obfuscator, true)
+		l.sendHTLCError(
+			pd, failure, obfuscator, true, hop.RouteRoleCleartext,
+		)
 
 		return nil
 	}
@@ -3671,7 +3694,8 @@ func (l *channelLink) forwardBatch(replay bool, packets ...*htlcPacket) {
 // sendHTLCError functions cancels HTLC and send cancel message back to the
 // peer from which HTLC was received.
 func (l *channelLink) sendHTLCError(pd *lnwallet.PaymentDescriptor,
-	failure *LinkError, e hop.ErrorEncrypter, isReceive bool) {
+	failure *LinkError, e hop.ErrorEncrypter, isReceive bool,
+	routeRole hop.RouteRole) {
 
 	reason, err := e.EncryptFirstHop(failure.WireMessage())
 	if err != nil {
