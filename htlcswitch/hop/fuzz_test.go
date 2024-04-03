@@ -117,7 +117,7 @@ func fuzzPayload(f *testing.F, finalPayload bool) {
 
 		r := bytes.NewReader(data)
 
-		payload1, _, err := NewPayloadFromReader(r, finalPayload)
+		payload1, _, err := NewPayloadFromReader(r, finalPayload, false)
 		if err != nil {
 			return
 		}
@@ -146,7 +146,9 @@ func fuzzPayload(f *testing.F, finalPayload bool) {
 			require.NoError(t, err)
 		}
 
-		payload2, _, err := NewPayloadFromReader(&b, finalPayload)
+		payload2, _, err := NewPayloadFromReader(
+			&b, finalPayload, false,
+		)
 		require.NoError(t, err)
 
 		require.Equal(t, payload1, payload2)

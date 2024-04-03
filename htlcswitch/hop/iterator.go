@@ -109,7 +109,7 @@ func (r *sphinxHopIterator) HopPayload() (*Payload, error) {
 		isFinal := r.processedPacket.Action == sphinx.ExitNode
 		payload, parsed, err := NewPayloadFromReader(
 			bytes.NewReader(r.processedPacket.Payload.Payload),
-			isFinal,
+			isFinal, r.blindingKit.UpdateAddBlinding.IsSome(),
 		)
 		if err != nil {
 			return nil, err
@@ -183,9 +183,10 @@ type BlindingKit struct {
 }
 
 // validateBlindingPoint validates that only one blinding point is present for
-// the hop and returns the relevant one.
+// the hop and returns the relevant one and a RouteRole indicating which
+// type of blinding hop we are.
 func (b *BlindingKit) validateBlindingPoint(payloadBlinding *btcec.PublicKey,
-	isFinalHop bool) (*btcec.PublicKey, error) {
+	isFinalHop bool) (*btcec.PublicKey, RouteRole, error) {
 
 	// Bolt 04: if encrypted_recipient_data is present:
 	// - if blinding_point (in update add) is set:
@@ -198,34 +199,34 @@ func (b *BlindingKit) validateBlindingPoint(payloadBlinding *btcec.PublicKey,
 
 	switch {
 	case !(payloadBlindingSet || updateBlindingSet):
-		return nil, ErrInvalidPayload{
+		return nil, 0, ErrInvalidPayload{
 			Type:      record.BlindingPointOnionType,
 			Violation: OmittedViolation,
 			FinalHop:  isFinalHop,
 		}
 
 	case payloadBlindingSet && updateBlindingSet:
-		return nil, ErrInvalidPayload{
+		return nil, 0, ErrInvalidPayload{
 			Type:      record.BlindingPointOnionType,
 			Violation: IncludedViolation,
 			FinalHop:  isFinalHop,
 		}
 
 	case payloadBlindingSet:
-		return payloadBlinding, nil
+		return payloadBlinding, RouteRoleIntroduction, nil
 
 	case updateBlindingSet:
 		pk, err := b.UpdateAddBlinding.UnwrapOrErr(
 			fmt.Errorf("expected update add blinding"),
 		)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
-		return pk.Val, nil
+		return pk.Val, RouteRoleRelaying, nil
 	}
 
-	return nil, fmt.Errorf("expected blinded point set")
+	return nil, 0, fmt.Errorf("expected blinded point set")
 }
 
 // DecryptAndValidateFwdInfo performs all operations required to decrypt and
@@ -237,7 +238,7 @@ func (b *BlindingKit) DecryptAndValidateFwdInfo(payload *Payload,
 	// We expect this function to be called when we have encrypted data
 	// present, and a blinding key is set either in the payload or the
 	// update_add_htlc message.
-	blindingPoint, err := b.validateBlindingPoint(
+	blindingPoint, routeRole, err := b.validateBlindingPoint(
 		payload.blindingPoint, isFinalHop,
 	)
 	if err != nil {
@@ -261,14 +262,14 @@ func (b *BlindingKit) DecryptAndValidateFwdInfo(payload *Payload,
 
 	// Validate the contents of the payload against the values we've
 	// just pulled out of the encrypted data blob.
-	err = ValidatePayloadWithBlinded(isFinalHop, payloadParsed)
+	err = ValidatePayloadWithBlinded(isFinalHop, routeRole, payloadParsed)
 	if err != nil {
 		return nil, err
 	}
 	// Validate the data in the blinded route against our incoming htlc's
 	// information.
 	if err := ValidateBlindedRouteData(
-		routeData, b.IncomingAmount, b.IncomingCltv,
+		routeData, b.IncomingAmount, b.IncomingCltv, routeRole,
 	); err != nil {
 		return nil, err
 	}
