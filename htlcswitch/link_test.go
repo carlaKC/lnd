@@ -5524,11 +5524,17 @@ func TestChannelLinkCleanupSpuriousResponses(t *testing.T) {
 	// Now, construct a Fail packet for Bob settling the first HTLC. This
 	// packet will NOT include a sourceRef, meaning the AddRef on disk will
 	// not be acked after committing this response.
+	obfuscator := NewMockObfuscator()
 	fail0 := &htlcPacket{
 		incomingChanID: harness.bobChannel.ShortChanID(),
 		incomingHTLCID: 0,
-		obfuscator:     NewMockObfuscator(),
-		htlc:           &lnwire.UpdateFailHTLC{},
+		obfuscator:     obfuscator,
+		// Since this packet isn't passing through the switch (where
+		// we'd add the circuit), we add it here.
+		circuit: &PaymentCircuit{
+			ErrorEncrypter: obfuscator,
+		},
+		htlc: &lnwire.UpdateFailHTLC{},
 	}
 	_ = harness.aliceLink.handleSwitchPacket(fail0)
 
@@ -5585,8 +5591,13 @@ func TestChannelLinkCleanupSpuriousResponses(t *testing.T) {
 		},
 		incomingChanID: harness.bobChannel.ShortChanID(),
 		incomingHTLCID: 1,
-		obfuscator:     NewMockObfuscator(),
-		htlc:           &lnwire.UpdateFailHTLC{},
+		obfuscator:     obfuscator,
+		// Since this packet isn't passing through the switch (where
+		// we'd add the circuit), we add it here.
+		circuit: &PaymentCircuit{
+			ErrorEncrypter: obfuscator,
+		},
+		htlc: &lnwire.UpdateFailHTLC{},
 	}
 	_ = harness.aliceLink.handleSwitchPacket(fail1)
 
@@ -5693,8 +5704,13 @@ func TestChannelLinkCleanupSpuriousResponses(t *testing.T) {
 		},
 		incomingChanID: harness.bobChannel.ShortChanID(),
 		incomingHTLCID: 0,
-		obfuscator:     NewMockObfuscator(),
-		htlc:           &lnwire.UpdateFailHTLC{},
+		obfuscator:     obfuscator,
+		// Since this packet isn't passing through the switch (where
+		// we'd add the circuit), we add it here.
+		circuit: &PaymentCircuit{
+			ErrorEncrypter: obfuscator,
+		},
+		htlc: &lnwire.UpdateFailHTLC{},
 	}
 	_ = harness.aliceLink.handleSwitchPacket(fail0)
 

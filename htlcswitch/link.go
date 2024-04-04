@@ -1796,8 +1796,32 @@ func (l *channelLink) handleDownstreamPkt(pkt *htlcPacket) {
 		htlc.ID = pkt.incomingHTLCID
 
 		// We send the HTLC message to the peer which initially created
-		// the HTLC.
-		l.cfg.Peer.SendMessage(false, htlc)
+		// the HTLC. If the incoming blinding point is non-nil, we
+		// know that we are a relaying node in a blinded path.
+		// Otherwise, we're either an introduction node or not part of
+		// a blinded path at all.
+		blinding, ok := l.channel.LookupBlindingPoint(inKey.HtlcID)
+		if !ok {
+			l.log.Errorf("unable to lookup incoming HTC: %v",
+				inKey)
+
+			return
+		}
+
+		if err := l.sendIncomingHTLCFailureMsg(
+			htlc.ID,
+			hop.NewRouteRole(
+				blinding.IsSome(),
+				pkt.blindedFailure,
+			),
+			pkt.circuit.ErrorEncrypter,
+			htlc.Reason,
+		); err != nil {
+			l.log.Errorf("unable to send HTLC failure: %v",
+				err)
+
+			return
+		}
 
 		// If the packet does not have a link failure set, it failed
 		// further down the route so we notify a forwarding failure.
@@ -3710,11 +3734,14 @@ func (l *channelLink) sendHTLCError(pd *lnwallet.PaymentDescriptor,
 		return
 	}
 
-	l.cfg.Peer.SendMessage(false, &lnwire.UpdateFailHTLC{
-		ChanID: l.ChanID(),
-		ID:     pd.HtlcIndex,
-		Reason: reason,
-	})
+	// Send the appropriate failure message depending on whether we're
+	// in a blinded route or not.
+	if err := l.sendIncomingHTLCFailureMsg(
+		pd.HtlcIndex, routeRole, e, reason,
+	); err != nil {
+		l.log.Errorf("unable to send HTLC failure: %v", err)
+		return
+	}
 
 	// Notify a link failure on our incoming link. Outgoing htlc information
 	// is not available at this point, because we have not decrypted the
@@ -3741,6 +3768,88 @@ func (l *channelLink) sendHTLCError(pd *lnwallet.PaymentDescriptor,
 		failure,
 		true,
 	)
+}
+
+// sendPeerHTLCFailure handles sending a HTLC failure message back to the
+// peer from which the HTLC was received. This function is primarily used to
+// handle the special requirements of route blinding, specifically:
+// - Forwarding nodes must switch out any errors with MalformedFailHTLC
+// - Introduction nodes should return regular HTLC failure messages.
+//
+// It accepts the original opaque failure, which will be used in the case
+// that we're not part of a blinded route and an error encrypter that'll be
+// used if we are the introduction node and need to present an error as if
+// we're the failing party.
+//
+// Note: this function does not yet handle special error cases for receiving
+// nodes in blinded paths, as LND does not support blinded receives.
+func (l *channelLink) sendIncomingHTLCFailureMsg(htlcIndex uint64,
+	routeRole hop.RouteRole, e hop.ErrorEncrypter,
+	originalFailure lnwire.OpaqueReason) error {
+
+	var msg lnwire.Message
+	switch {
+	// For cleartext hops (ie, non-blinded/normal) we don't need any
+	// transformation on the error message and can just send the original.
+	case routeRole == hop.RouteRoleCleartext:
+		msg = &lnwire.UpdateFailHTLC{
+			ChanID: l.ChanID(),
+			ID:     htlcIndex,
+			Reason: originalFailure,
+		}
+
+	// Our circuit's error encrypter will be nil if this was a locally
+	// initiated payment. We can only hit a blinded error for a locally
+	// initiated payment if we allow ourselves to be picked as the
+	// introduction node for our own payments. This isn't currently
+	// supported (we don't send to blinded paths where we're the intro)
+	// so we error out here.
+	// TODO: once sending to blinded paths where we are the introduction
+	// node is supported, update this to just not encrypt the failure.
+	case e == nil:
+		return fmt.Errorf("unexpected blinded failure for %v when "+
+			"we are the sending node, incoming htlc: %v(%v)",
+			routeRole, l.ShortChanID(), htlcIndex)
+
+	case routeRole == hop.RouteRoleIntroduction:
+		l.log.Debugf("Introduction blinded node switching out failure "+
+			"error: %v", htlcIndex)
+
+		// The specification does not require that we set the onion
+		// blob.
+		failureMsg := lnwire.NewInvalidBlinding(nil)
+		reason, err := e.EncryptFirstHop(failureMsg)
+		if err != nil {
+			return err
+		}
+
+		msg = &lnwire.UpdateFailHTLC{
+			ChanID: l.ChanID(),
+			ID:     htlcIndex,
+			Reason: reason,
+		}
+
+	// If we are a relaying node, we need to switch out any error that
+	// we've received to a malformed HTLC error.
+	case routeRole == hop.RouteRoleRelaying:
+		l.log.Debugf("Relaying blinded node switching out malformed "+
+			"error: %v", htlcIndex)
+
+		msg = &lnwire.UpdateFailMalformedHTLC{
+			ChanID:      l.ChanID(),
+			ID:          htlcIndex,
+			FailureCode: lnwire.CodeInvalidBlinding,
+		}
+
+	default:
+		return fmt.Errorf("unexpected route role: %d", routeRole)
+	}
+
+	if err := l.cfg.Peer.SendMessage(false, msg); err != nil {
+		l.log.Warnf("Send update fail failed: %v", err)
+	}
+
+	return nil
 }
 
 // sendMalformedHTLCError helper function which sends the malformed HTLC update
