@@ -713,6 +713,7 @@ func (f *interceptedForward) resolve(message lnwire.Message) error {
 		outgoingChanID: f.packet.outgoingChanID,
 		outgoingHTLCID: f.packet.outgoingHTLCID,
 		isResolution:   true,
+		blindedFailure: f.htlc.BlindingPoint.IsSome(),
 		circuit:        f.packet.circuit,
 		htlc:           message,
 		obfuscator:     f.packet.obfuscator,

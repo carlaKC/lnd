@@ -731,12 +731,22 @@ func (m *memoryMailBox) FailAdd(pkt *htlcPacket) {
 		failure, OutgoingFailureDownstreamHtlcAdd,
 	)
 
+	// Signal if we are in a blinded route so that the incoming link
+	// can handle appropriately.
+	add, ok := pkt.htlc.(*lnwire.UpdateAddHTLC)
+	if !ok {
+		log.Errorf("Failed packet that is not an "+
+			"UpdateAddHTLC incoming htlc %v:%v",
+			pkt.incomingChanID, pkt.incomingChanID)
+	}
+
 	failPkt := &htlcPacket{
 		incomingChanID: pkt.incomingChanID,
 		incomingHTLCID: pkt.incomingHTLCID,
 		circuit:        pkt.circuit,
 		sourceRef:      pkt.sourceRef,
 		hasSource:      true,
+		blindedFailure: add.BlindingPoint.IsSome(),
 		localFailure:   localFailure,
 		linkFailure:    linkError,
 		htlc: &lnwire.UpdateFailHTLC{

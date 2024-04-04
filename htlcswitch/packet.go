@@ -69,6 +69,14 @@ type htlcPacket struct {
 	// taken place.
 	convertedError bool
 
+	// blindedFailure is set to true if this is an HTLC fail that is
+	// associated with an outgoing htlc that had a non-nil blinding point.
+	// This signal is used to help the incoming link determine our role
+	// in a blinded route (introduction or relaying node), because it only
+	// has knowledge about the incoming htlc by the time the packet reaches
+	// it.
+	blindedFailure bool
+
 	// hasSource is set to true if the incomingChanID and incomingHTLCID
 	// fields of a forwarded fail packet are already set and do not need to
 	// be looked up in the circuit map.

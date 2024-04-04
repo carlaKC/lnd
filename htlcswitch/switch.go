@@ -794,7 +794,13 @@ func (s *Switch) ForwardPackets(linkQuit chan struct{},
 		for _, packet := range failedPackets {
 			// We don't handle the error here since this method
 			// always returns an error.
-			_ = s.failAddPacket(packet, linkError)
+			//
+			// We can use the packet's blinded signal here
+			// because we expect packets that are forwarded
+			// through the switch to already have this value set.
+			_ = s.failAddPacket(
+				packet, linkError, packet.blindedFailure,
+			)
 		}
 	}
 
@@ -1102,6 +1108,10 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 	// payment circuit within our internal state so we can properly forward
 	// the ultimate settle message back latter.
 	case *lnwire.UpdateAddHTLC:
+		// Track whether we're in a blinded path for if we have to
+		// fail the htlc.
+		blindedFailure := htlc.BlindingPoint.IsSome()
+
 		// Check if the node is set to reject all onward HTLCs and also make
 		// sure that HTLC is not from the source node.
 		if s.cfg.RejectHTLC {
@@ -1110,7 +1120,7 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 				OutgoingFailureForwardsDisabled,
 			)
 
-			return s.failAddPacket(packet, failure)
+			return s.failAddPacket(packet, failure, blindedFailure)
 		}
 
 		// Before we attempt to find a non-strict forwarding path for
@@ -1127,7 +1137,7 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 			s.cfg.AllowCircularRoute, htlc.PaymentHash,
 		)
 		if linkErr != nil {
-			return s.failAddPacket(packet, linkErr)
+			return s.failAddPacket(packet, linkErr, blindedFailure)
 		}
 
 		s.indexMtx.RLock()
@@ -1145,7 +1155,9 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 				&lnwire.FailUnknownNextPeer{},
 			)
 
-			return s.failAddPacket(packet, linkError)
+			return s.failAddPacket(
+				packet, linkError, blindedFailure,
+			)
 		}
 		targetPeerKey := targetLink.PeerPubKey()
 		interfaceLinks, _ := s.getLinks(targetPeerKey)
@@ -1223,7 +1235,7 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 				htlc.PaymentHash[:], packet.outgoingChanID,
 				linkErr)
 
-			return s.failAddPacket(packet, linkErr)
+			return s.failAddPacket(packet, linkErr, blindedFailure)
 		}
 
 		// Choose a random link out of the set of links that can forward
@@ -1245,7 +1257,7 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 				&lnwire.FailTemporaryChannelFailure{},
 			)
 
-			return s.failAddPacket(packet, linkErr)
+			return s.failAddPacket(packet, linkErr, blindedFailure)
 		}
 
 		// Evaluate whether this HTLC would increase our exposure to
@@ -1259,7 +1271,7 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 				&lnwire.FailTemporaryChannelFailure{},
 			)
 
-			return s.failAddPacket(packet, linkErr)
+			return s.failAddPacket(packet, linkErr, blindedFailure)
 		}
 
 		// Also evaluate whether this HTLC would increase our exposure
@@ -1273,7 +1285,7 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 				&lnwire.FailTemporaryChannelFailure{},
 			)
 
-			return s.failAddPacket(packet, linkErr)
+			return s.failAddPacket(packet, linkErr, blindedFailure)
 		}
 
 		// Send the packet to the destination channel link which
@@ -1457,7 +1469,9 @@ func (s *Switch) checkCircularForward(incoming, outgoing lnwire.ShortChannelID,
 // failAddPacket encrypts a fail packet back to an add packet's source.
 // The ciphertext will be derived from the failure message proivded by context.
 // This method returns the failErr if all other steps complete successfully.
-func (s *Switch) failAddPacket(packet *htlcPacket, failure *LinkError) error {
+func (s *Switch) failAddPacket(packet *htlcPacket, failure *LinkError,
+	blindedFailure bool) error {
+
 	// Encrypt the failure so that the sender will be able to read the error
 	// message. Since we failed this packet, we use EncryptFirstHop to
 	// obfuscate the failure for their eyes only.
@@ -1486,6 +1500,7 @@ func (s *Switch) failAddPacket(packet *htlcPacket, failure *LinkError) error {
 		outgoingTimeout: packet.outgoingTimeout,
 		circuit:         packet.circuit,
 		linkFailure:     failure,
+		blindedFailure:  blindedFailure,
 		htlc: &lnwire.UpdateFailHTLC{
 			Reason: reason,
 		},
