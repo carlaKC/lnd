@@ -26,11 +26,13 @@ import (
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/channeldb/models"
+	"github.com/lightningnetwork/lnd/fn"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/shachain"
+	"github.com/lightningnetwork/lnd/tlv"
 )
 
 var (
@@ -6435,6 +6437,25 @@ func (lc *LightningChannel) ReceiveFailHTLC(htlcIndex uint64, reason []byte,
 	lc.localUpdateLog.markHtlcModified(htlcIndex)
 
 	return nil
+}
+
+// LookupBlindingPoint performs a lookup in our local update log, returning the
+// blinding point associated with the htlc add (if any).
+func (lc *LightningChannel) LookupBlindingPoint(htlcIndex uint64) (
+	lnwire.BlindingPointRecord, bool) {
+
+	lc.Lock()
+	defer lc.Unlock()
+
+	htlc := lc.remoteUpdateLog.lookupHtlc(htlcIndex)
+	if htlc == nil {
+		//nolint:lll,govet
+		return tlv.OptionalRecordT[lnwire.BlindingPointTlvType, *btcec.PublicKey]{
+			fn.None[tlv.RecordT[lnwire.BlindingPointTlvType, *btcec.PublicKey]](),
+		}, false
+	}
+
+	return htlc.BlindingPoint, true
 }
 
 // ChannelPoint returns the outpoint of the original funding transaction which
