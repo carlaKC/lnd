@@ -1309,6 +1309,11 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 
 		fail, isFail := htlc.(*lnwire.UpdateFailHTLC)
 		if isFail && !packet.hasSource {
+			// HTLC resolutions and messages restored from disk
+			// don't have the circuit set from the original htlc
+			// add packet - set it here for use in blinded errors.
+			packet.circuit = circuit
+
 			switch {
 			// No message to encrypt, locally sourced payment.
 			case circuit.ErrorEncrypter == nil:
@@ -1317,6 +1322,7 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 			// encrypt it as it's actually internally sourced.
 			case packet.isResolution:
 				var err error
+
 				// TODO(roasbeef): don't need to pass actually?
 				failure := &lnwire.FailPermanentChannelFailure{}
 				fail.Reason, err = circuit.ErrorEncrypter.EncryptFirstHop(
@@ -1856,6 +1862,10 @@ out:
 			// resolution message on restart.
 			resolutionMsg.errChan <- nil
 
+			// Create a htlc packet for this resolution. We do
+			// not have some of the information that we'll need
+			// for blinded error handling here , so we'll rely on
+			// our forwarding logic to fill it in later.
 			pkt := &htlcPacket{
 				// TODO(carla): don't know blinding type!
 				outgoingChanID: resolutionMsg.SourceChan,
@@ -2081,6 +2091,8 @@ func (s *Switch) reforwardResolutions() error {
 
 		// The circuit is still open, so we can assume that the link or
 		// switch (if we are the source) hasn't cleaned it up yet.
+		// We rely on our forwarding logic to fill in details that
+		// are not currently available to us.
 		resPkt := &htlcPacket{
 			// TODO(carla): don't know is blinded
 			outgoingChanID: resMsg.SourceChan,
@@ -2231,7 +2243,8 @@ func (s *Switch) reforwardSettleFails(fwdPkgs []*channeldb.FwdPkg) {
 				// we can continue to propagate it. This
 				// failure originated from another node, so
 				// the linkFailure field is not set on this
-				// packet.
+				// packet. We rely on the link to fill in
+				// additional circuit information for us.
 				failPacket := &htlcPacket{
 					// TODO(carla): we don't know what we are here
 					outgoingChanID: fwdPkg.Source,
