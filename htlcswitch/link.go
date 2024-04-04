@@ -3145,6 +3145,7 @@ func (l *channelLink) processRemoteSettleFails(fwdPkg *channeldb.FwdPkg,
 			// from another node, so the linkFailure field is not
 			// set on the packet.
 			failPacket := &htlcPacket{
+				// TODO: don't know isblinded
 				outgoingChanID: l.ShortChanID(),
 				outgoingHTLCID: pd.ParentIndex,
 				destRef:        pd.DestRef,

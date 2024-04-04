@@ -1857,6 +1857,7 @@ out:
 			resolutionMsg.errChan <- nil
 
 			pkt := &htlcPacket{
+				// TODO(carla): don't know blinding type!
 				outgoingChanID: resolutionMsg.SourceChan,
 				outgoingHTLCID: resolutionMsg.HtlcIndex,
 				isResolution:   true,
@@ -2081,6 +2082,7 @@ func (s *Switch) reforwardResolutions() error {
 		// The circuit is still open, so we can assume that the link or
 		// switch (if we are the source) hasn't cleaned it up yet.
 		resPkt := &htlcPacket{
+			// TODO(carla): don't know is blinded
 			outgoingChanID: resMsg.SourceChan,
 			outgoingHTLCID: resMsg.HtlcIndex,
 			isResolution:   true,
@@ -2231,6 +2233,7 @@ func (s *Switch) reforwardSettleFails(fwdPkgs []*channeldb.FwdPkg) {
 				// the linkFailure field is not set on this
 				// packet.
 				failPacket := &htlcPacket{
+					// TODO(carla): blinding type unknown
 					outgoingChanID: fwdPkg.Source,
 					outgoingHTLCID: pd.ParentIndex,
 					destRef:        pd.DestRef,
