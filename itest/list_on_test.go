@@ -579,6 +579,10 @@ var allTestCases = []*lntest.TestCase{
 		TestFunc: testDisableIntroductionNode,
 	},
 	{
+		Name:     "on chain to blinded",
+		TestFunc: testErrorHandlingOnChainFailure,
+	},
+	{
 		Name:     "removetx",
 		TestFunc: testRemoveTx,
 	},
