@@ -1021,6 +1021,8 @@ func createTestChannelsForVectors(tc *testContext, chanType channeldb.ChannelTyp
 	remotePool := NewSigPool(1, remoteSigner)
 	channelRemote, err := NewLightningChannel(
 		remoteSigner, remoteChannelState, remotePool,
+		WithLeafStore(&MockAuxLeafStore{}),
+		WithAuxSigner(&MockAuxSigner{}),
 	)
 	require.NoError(t, err)
 	require.NoError(t, remotePool.Start())
@@ -1028,6 +1030,8 @@ func createTestChannelsForVectors(tc *testContext, chanType channeldb.ChannelTyp
 	localPool := NewSigPool(1, localSigner)
 	channelLocal, err := NewLightningChannel(
 		localSigner, localChannelState, localPool,
+		WithLeafStore(&MockAuxLeafStore{}),
+		WithAuxSigner(&MockAuxSigner{}),
 	)
 	require.NoError(t, err)
 	require.NoError(t, localPool.Start())

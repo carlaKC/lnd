@@ -443,3 +443,45 @@ func (*MockAuxLeafStore) ApplyHtlcView(_ *channeldb.OpenChannel, _ tlv.Blob,
 
 	return fn.None[tlv.Blob](), nil
 }
+
+type MockAuxSigner struct{}
+
+// SubmitSecondLevelSigBatch takes a batch of aux sign jobs and
+// processes them asynchronously.
+func (*MockAuxSigner) SubmitSecondLevelSigBatch(_ *channeldb.OpenChannel,
+	_ *wire.MsgTx, jobs []AuxSigJob) error {
+
+	for _, job := range jobs {
+		job.Resp <- AuxSigJobResp{}
+	}
+
+	return nil
+}
+
+// PackSigs takes a series of aux signatures and packs them into a
+// single blob that can be sent alongside the CommitSig messages.
+func (*MockAuxSigner) PackSigs([]fn.Option[tlv.Blob]) (fn.Option[tlv.Blob],
+	error) {
+
+	return fn.None[tlv.Blob](), nil
+}
+
+// UnpackSigs takes a packed blob of signatures and returns the
+// original signatures for each HTLC, keyed by HTLC index.
+func (*MockAuxSigner) UnpackSigs(fn.Option[tlv.Blob]) ([]fn.Option[tlv.Blob],
+	error) {
+
+	return nil, nil
+}
+
+// VerifySecondLevelSigs attempts to synchronously verify a batch of aux
+// sig jobs.
+func (*MockAuxSigner) VerifySecondLevelSigs(_ *channeldb.OpenChannel,
+	_ *wire.MsgTx, jobs []AuxVerifyJob) error {
+
+	for _, job := range jobs {
+		job.ErrResp <- nil
+	}
+
+	return nil
+}

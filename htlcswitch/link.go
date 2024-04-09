@@ -2209,6 +2209,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			CommitSig:  msg.CommitSig,
 			HtlcSigs:   msg.HtlcSigs,
 			PartialSig: msg.PartialSig,
+			AuxSigBlob: msg.ExtraData,
 		})
 		if err != nil {
 			// If we were unable to reconstruct their proposed
@@ -2641,6 +2642,7 @@ func (l *channelLink) updateCommitTx() error {
 		CommitSig:  newCommit.CommitSig,
 		HtlcSigs:   newCommit.HtlcSigs,
 		PartialSig: newCommit.PartialSig,
+		ExtraData:  newCommit.AuxSigBlob,
 	}
 	l.cfg.Peer.SendMessage(false, commitSig)
 

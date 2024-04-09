@@ -372,6 +372,8 @@ func CreateTestChannels(t *testing.T, chanType channeldb.ChannelType,
 	alicePool := NewSigPool(1, aliceSigner)
 	channelAlice, err := NewLightningChannel(
 		aliceSigner, aliceChannelState, alicePool,
+		WithLeafStore(&MockAuxLeafStore{}),
+		WithAuxSigner(&MockAuxSigner{}),
 	)
 	if err != nil {
 		return nil, nil, err
@@ -386,6 +388,8 @@ func CreateTestChannels(t *testing.T, chanType channeldb.ChannelType,
 	bobPool := NewSigPool(1, bobSigner)
 	channelBob, err := NewLightningChannel(
 		bobSigner, bobChannelState, bobPool,
+		WithLeafStore(&MockAuxLeafStore{}),
+		WithAuxSigner(&MockAuxSigner{}),
 	)
 	if err != nil {
 		return nil, nil, err

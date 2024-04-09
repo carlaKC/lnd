@@ -271,6 +271,8 @@ func TestChannelLinkRevThenSig(t *testing.T) {
 	bobPool := lnwallet.NewSigPool(runtime.NumCPU(), bobSigner)
 	bobChannel, err := lnwallet.NewLightningChannel(
 		bobSigner, harness.bobChannel.State(), bobPool,
+		lnwallet.WithLeafStore(&lnwallet.MockAuxLeafStore{}),
+		lnwallet.WithAuxSigner(&lnwallet.MockAuxSigner{}),
 	)
 	require.NoError(t, err)
 	err = bobPool.Start()
@@ -406,6 +408,8 @@ func TestChannelLinkSigThenRev(t *testing.T) {
 	bobPool := lnwallet.NewSigPool(runtime.NumCPU(), bobSigner)
 	bobChannel, err := lnwallet.NewLightningChannel(
 		bobSigner, harness.bobChannel.State(), bobPool,
+		lnwallet.WithLeafStore(&lnwallet.MockAuxLeafStore{}),
+		lnwallet.WithAuxSigner(&lnwallet.MockAuxSigner{}),
 	)
 	require.NoError(t, err)
 	err = bobPool.Start()
