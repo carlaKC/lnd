@@ -3824,6 +3824,9 @@ message InvoiceHTLC {
 
     // Details relevant to AMP HTLCs, only populated if this is an AMP HTLC.
     AMP amp = 11;
+
+    // Whether the incoming HTLC was endorsed.
+    bool incoming_endorsed = 12;
 }
 
 // Details specific to AMP HTLCs.

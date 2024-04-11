@@ -639,6 +639,10 @@
         "amp": {
           "$ref": "#/definitions/lnrpcAMP",
           "description": "Details relevant to AMP HTLCs, only populated if this is an AMP HTLC."
+        },
+        "incoming_endorsed": {
+          "type": "boolean",
+          "description": "Whether the incoming HTLC was endorsed."
         }
       },
       "title": "Details of an HTLC that paid to an invoice"
