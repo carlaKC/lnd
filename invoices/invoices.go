@@ -545,6 +545,9 @@ type InvoiceHTLC struct {
 	//
 	// NOTE: This value will only be set for AMP HTLCs.
 	AMP *InvoiceHtlcAMPData
+
+	// IncomingEndorsed indicates that the incoming HTLC was endorsed.
+	IncomingEndorsed bool
 }
 
 // Copy makes a deep copy of the target InvoiceHTLC.

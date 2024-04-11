@@ -102,6 +102,7 @@ const (
 	htlcAMPType      tlv.Type = 19
 	htlcHashType     tlv.Type = 21
 	htlcPreimageType tlv.Type = 23
+	htlcEndorsedType tlv.Type = 25
 
 	// A set of tlv type definitions used to serialize invoice bodiees.
 	//
@@ -945,6 +946,10 @@ func serializeHtlcs(w io.Writer,
 		acceptTime := putNanoTime(htlc.AcceptTime)
 		resolveTime := putNanoTime(htlc.ResolveTime)
 		state := uint8(htlc.State)
+		var endorsed uint8
+		if htlc.IncomingEndorsed {
+			endorsed = 1
+		}
 
 		var records []tlv.Record
 		records = append(records,
@@ -984,6 +989,9 @@ func serializeHtlcs(w io.Writer,
 			}
 		}
 
+		records = append(records, tlv.MakePrimitiveRecord(
+			htlcEndorsedType, &endorsed,
+		))
 		// Convert the custom records to tlv.Record types that are ready
 		// for serialization.
 		customRecords := tlv.MapToRecords(htlc.CustomRecords)
@@ -1641,6 +1649,7 @@ func deserializeHtlcs(r io.Reader) (map[models.CircuitKey]*invpkg.InvoiceHTLC,
 			amp                     = &record.AMP{}
 			hash32                  = &[32]byte{}
 			preimage32              = &[32]byte{}
+			endorsed                uint8
 		)
 		tlvStream, err := tlv.NewStream(
 			tlv.MakePrimitiveRecord(chanIDType, &chanID),
@@ -1660,6 +1669,9 @@ func deserializeHtlcs(r io.Reader) (map[models.CircuitKey]*invpkg.InvoiceHTLC,
 			),
 			tlv.MakePrimitiveRecord(htlcHashType, hash32),
 			tlv.MakePrimitiveRecord(htlcPreimageType, preimage32),
+			tlv.MakePrimitiveRecord(
+				htlcEndorsedType, &endorsed,
+			),
 		)
 		if err != nil {
 			return nil, err
@@ -1686,6 +1698,9 @@ func deserializeHtlcs(r io.Reader) (map[models.CircuitKey]*invpkg.InvoiceHTLC,
 			hash = &h
 		}
 
+		if endorsed == 1 {
+			htlc.IncomingEndorsed = true
+		}
 		key.ChanID = lnwire.NewShortChanIDFromInt(chanID)
 		htlc.AcceptTime = getNanoTime(acceptTime)
 		htlc.ResolveTime = getNanoTime(resolveTime)
