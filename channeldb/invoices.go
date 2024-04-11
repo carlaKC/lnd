@@ -2082,14 +2082,15 @@ func (d *DB) addHTLCs(invoices, settleIndex, //nolint:funlen
 		}
 
 		htlc := &invpkg.InvoiceHTLC{
-			Amt:           htlcUpdate.Amt,
-			MppTotalAmt:   htlcUpdate.MppTotalAmt,
-			Expiry:        htlcUpdate.Expiry,
-			AcceptHeight:  uint32(htlcUpdate.AcceptHeight),
-			AcceptTime:    timestamp,
-			State:         invpkg.HtlcStateAccepted,
-			CustomRecords: htlcUpdate.CustomRecords,
-			AMP:           htlcUpdate.AMP.Copy(),
+			Amt:              htlcUpdate.Amt,
+			MppTotalAmt:      htlcUpdate.MppTotalAmt,
+			Expiry:           htlcUpdate.Expiry,
+			AcceptHeight:     uint32(htlcUpdate.AcceptHeight),
+			AcceptTime:       timestamp,
+			State:            invpkg.HtlcStateAccepted,
+			CustomRecords:    htlcUpdate.CustomRecords,
+			AMP:              htlcUpdate.AMP.Copy(),
+			IncomingEndorsed: htlcUpdate.IncomingEndorsed,
 		}
 
 		invoice.Htlcs[key] = htlc

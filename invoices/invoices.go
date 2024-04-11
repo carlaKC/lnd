@@ -657,6 +657,9 @@ type HtlcAcceptDesc struct {
 	//
 	// NOTE: This value will only be set for AMP HTLCs.
 	AMP *InvoiceHtlcAMPData
+
+	// IncomingEndorsed indicates that the incoming HTLC was endorsed.
+	IncomingEndorsed bool
 }
 
 // UpdateType is an enum that describes the type of update that was applied to

@@ -23,6 +23,7 @@ type invoiceUpdateCtx struct {
 	mpp                  *record.MPP
 	amp                  *record.AMP
 	metadata             []byte
+	incomingEndorsed     bool
 }
 
 // invoiceRef returns an identifier that can be used to lookup or update the
@@ -160,11 +161,12 @@ func updateMpp(ctx *invoiceUpdateCtx, inv *Invoice) (*InvoiceUpdateDesc,
 
 	// Start building the accept descriptor.
 	acceptDesc := &HtlcAcceptDesc{
-		Amt:           ctx.amtPaid,
-		Expiry:        ctx.expiry,
-		AcceptHeight:  ctx.currentHeight,
-		MppTotalAmt:   ctx.mpp.TotalMsat(),
-		CustomRecords: ctx.customRecords,
+		Amt:              ctx.amtPaid,
+		Expiry:           ctx.expiry,
+		AcceptHeight:     ctx.currentHeight,
+		MppTotalAmt:      ctx.mpp.TotalMsat(),
+		CustomRecords:    ctx.customRecords,
+		IncomingEndorsed: ctx.incomingEndorsed,
 	}
 
 	if ctx.amp != nil {
@@ -415,10 +417,11 @@ func updateLegacy(ctx *invoiceUpdateCtx,
 	// Record HTLC in the invoice database.
 	newHtlcs := map[CircuitKey]*HtlcAcceptDesc{
 		ctx.circuitKey: {
-			Amt:           ctx.amtPaid,
-			Expiry:        ctx.expiry,
-			AcceptHeight:  ctx.currentHeight,
-			CustomRecords: ctx.customRecords,
+			Amt:              ctx.amtPaid,
+			Expiry:           ctx.expiry,
+			AcceptHeight:     ctx.currentHeight,
+			CustomRecords:    ctx.customRecords,
+			IncomingEndorsed: ctx.incomingEndorsed,
 		},
 	}
 

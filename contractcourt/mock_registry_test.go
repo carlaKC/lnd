@@ -26,7 +26,7 @@ type mockRegistry struct {
 func (r *mockRegistry) NotifyExitHopHtlc(payHash lntypes.Hash,
 	paidAmount lnwire.MilliSatoshi, expiry uint32, currentHeight int32,
 	circuitKey models.CircuitKey, hodlChan chan<- interface{},
-	payload invoices.Payload) (invoices.HtlcResolution, error) {
+	payload invoices.Payload, _ bool) (invoices.HtlcResolution, error) {
 
 	r.notifyChan <- notifyExitHopData{
 		hodlChan:      hodlChan,
