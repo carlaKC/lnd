@@ -3001,13 +3001,7 @@ func processAddEntry(htlc *PaymentDescriptor, ourBalance,
 	// a new commitment), then we'll may be updating the height this entry
 	// was added to the chain. Otherwise, we may be updating the entry's
 	// height w.r.t the local chain.
-	var addHeight *uint64
-	if whoseCommitChain.IsRemote() {
-		addHeight = &htlc.addCommitHeightRemote
-	} else {
-		addHeight = &htlc.addCommitHeightLocal
-	}
-
+	addHeight := AddHeight(htlc, whoseCommitChain)
 	if *addHeight != 0 {
 		return
 	}
@@ -3035,14 +3029,8 @@ func processRemoveEntry(htlc *PaymentDescriptor, ourBalance,
 	theirBalance *lnwire.MilliSatoshi, nextHeight uint64,
 	whoseCommitChain lntypes.ChannelParty, isIncoming, mutateState bool) {
 
-	var removeHeight *uint64
-	if whoseCommitChain.IsRemote() {
-		removeHeight = &htlc.removeCommitHeightRemote
-	} else {
-		removeHeight = &htlc.removeCommitHeightLocal
-	}
-
 	// Ignore any removal entries which have already been processed.
+	removeHeight := RemoveHeight(htlc, whoseCommitChain)
 	if *removeHeight != 0 {
 		return
 	}
@@ -3087,15 +3075,8 @@ func processFeeUpdate(feeUpdate *PaymentDescriptor, nextHeight uint64,
 	// Fee updates are applied for all commitments after they are
 	// sent/received, so we consider them being added and removed at the
 	// same height.
-	var addHeight *uint64
-	var removeHeight *uint64
-	if whoseCommitChain.IsRemote() {
-		addHeight = &feeUpdate.addCommitHeightRemote
-		removeHeight = &feeUpdate.removeCommitHeightRemote
-	} else {
-		addHeight = &feeUpdate.addCommitHeightLocal
-		removeHeight = &feeUpdate.removeCommitHeightLocal
-	}
+	addHeight := AddHeight(feeUpdate, whoseCommitChain)
+	removeHeight := RemoveHeight(feeUpdate, whoseCommitChain)
 
 	if *addHeight != 0 {
 		return
@@ -4579,10 +4560,12 @@ func (lc *LightningChannel) computeView(view *HtlcView,
 	// number of outstanding HTLCs has changed.
 	if lc.channelState.IsInitiator {
 		ourBalance += lnwire.NewMSatFromSatoshis(
-			commitChain.tip().fee)
+			commitChain.tip().fee,
+		)
 	} else if !lc.channelState.IsInitiator {
 		theirBalance += lnwire.NewMSatFromSatoshis(
-			commitChain.tip().fee)
+			commitChain.tip().fee,
+		)
 	}
 	nextHeight := commitChain.tip().height + 1
 
