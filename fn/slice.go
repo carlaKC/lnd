@@ -1,6 +1,10 @@
 package fn
 
-import "golang.org/x/exp/constraints"
+import (
+	"sync"
+
+	"golang.org/x/exp/constraints"
+)
 
 // Number is a type constraint for all numeric types in Go (integers,
 // float and complex numbers)
@@ -197,4 +201,22 @@ func Sum[B Number](items []B) B {
 	return Foldl(func(a, b B) B {
 		return a + b
 	}, 0, items)
+}
+
+// ForEachConc maps the argument function over the slice, spawning a new
+// goroutine for each element in the slice and then awaits all results before
+// returning them.
+func ForEachConc[A, B any](f func(A) B, as []A) []B {
+	wait := sync.WaitGroup{}
+	bs := make([]B, len(as))
+	for i, a := range as {
+		i, a := i, a
+		wait.Add(1)
+		go func() {
+			bs[i] = f(a)
+			wait.Done()
+		}()
+	}
+	wait.Wait()
+	return bs
 }
