@@ -9,9 +9,11 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb/models"
+	"github.com/lightningnetwork/lnd/fn"
 	"github.com/lightningnetwork/lnd/htlcswitch/hop"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/record"
 )
 
 var (
@@ -109,6 +111,10 @@ const (
 
 	// FwdActionFail fails the intercepted packet back to the sender.
 	FwdActionFail
+
+	// FwdActionResumeModified forwards the intercepted packet to the switch
+	// with modifications.
+	FwdActionResumeModified
 )
 
 // FwdResolution defines the action to be taken on an intercepted packet.
@@ -122,6 +128,14 @@ type FwdResolution struct {
 	// Preimage is the preimage that is to be used for settling if Action is
 	// FwdActionSettle.
 	Preimage lntypes.Preimage
+
+	// OutgoingAmountMsat is the amount that is to be used for forwarding if
+	// Action is FwdActionResumeModified.
+	OutgoingAmountMsat fn.Option[lnwire.MilliSatoshi]
+
+	// CustomRecords is the custom records that are to be used for
+	// forwarding if Action is FwdActionResumeModified.
+	CustomRecords fn.Option[record.CustomSet]
 
 	// FailureMessage is the encrypted failure message that is to be passed
 	// back to the sender if action is FwdActionFail.
@@ -399,6 +413,11 @@ func (s *InterceptableSwitch) resolve(res *FwdResolution) error {
 	case FwdActionResume:
 		return intercepted.Resume()
 
+	case FwdActionResumeModified:
+		return intercepted.ResumeModified(
+			res.OutgoingAmountMsat, res.CustomRecords,
+		)
+
 	case FwdActionSettle:
 		return intercepted.Settle(res.Preimage)
 
@@ -636,6 +655,74 @@ func (f *interceptedForward) Packet() InterceptedPacket {
 
 // Resume resumes the default behavior as if the packet was not intercepted.
 func (f *interceptedForward) Resume() error {
+	// Forward to the switch. A link quit channel isn't needed, because we
+	// are on a different thread now.
+	return f.htlcSwitch.ForwardPackets(nil, f.packet)
+}
+
+// ResumeModified resumes the default behavior with field modifications.
+func (f *interceptedForward) ResumeModified(
+	outgoingAmountMsat fn.Option[lnwire.MilliSatoshi],
+	customRecords fn.Option[record.CustomSet]) error {
+
+	// Modify the wire message contained in the packet.
+	switch htlc := f.packet.htlc.(type) {
+	case *lnwire.UpdateAddHTLC:
+		outgoingAmountMsat.WhenSome(func(amount lnwire.MilliSatoshi) {
+			f.packet.amount = amount
+			htlc.Amount = amount
+		})
+
+		err := fn.MapOptionZ(
+			customRecords, func(records record.CustomSet) error {
+				if len(records) == 0 {
+					return nil
+				}
+
+				// Type cast and validate custom records.
+				htlc.CustomRecords = lnwire.CustomRecords(
+					records,
+				)
+				err := htlc.CustomRecords.Validate()
+				if err != nil {
+					return fmt.Errorf("failed to validate "+
+						"custom records: %w", err)
+				}
+
+				return nil
+			},
+		)
+		if err != nil {
+			return fmt.Errorf("failed to encode custom records: %w",
+				err)
+		}
+
+	case *lnwire.UpdateFulfillHTLC:
+		err := fn.MapOptionZ(
+			customRecords, func(records record.CustomSet) error {
+				if len(records) == 0 {
+					return nil
+				}
+
+				// Type cast and validate custom records.
+				htlc.CustomRecords = lnwire.CustomRecords(
+					records,
+				)
+				err := htlc.CustomRecords.Validate()
+				if err != nil {
+					return fmt.Errorf("failed to validate "+
+						"custom records: %w", err)
+				}
+
+				return nil
+			},
+		)
+		if err != nil {
+			return fmt.Errorf("failed to encode custom records: %w",
+				err)
+		}
+	}
+
 	// Forward to the switch. A link quit channel isn't needed, because we
 	// are on a different thread now.
 	return f.htlcSwitch.ForwardPackets(nil, f.packet)
