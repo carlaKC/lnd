@@ -129,6 +129,10 @@ type FwdResolution struct {
 	// FwdActionSettle.
 	Preimage lntypes.Preimage
 
+	// InAmountMsat is the amount that is to be used for validating if
+	// Action is FwdActionResumeModified.
+	InAmountMsat fn.Option[lnwire.MilliSatoshi]
+
 	// OutAmountMsat is the amount that is to be used for forwarding if
 	// Action is FwdActionResumeModified.
 	OutAmountMsat fn.Option[lnwire.MilliSatoshi]
@@ -415,7 +419,8 @@ func (s *InterceptableSwitch) resolve(res *FwdResolution) error {
 
 	case FwdActionResumeModified:
 		return intercepted.ResumeModified(
-			res.OutAmountMsat, res.OutWireCustomRecords,
+			res.InAmountMsat, res.OutAmountMsat,
+			res.OutWireCustomRecords,
 		)
 
 	case FwdActionSettle:
@@ -662,6 +667,7 @@ func (f *interceptedForward) Resume() error {
 
 // ResumeModified resumes the default behavior with field modifications.
 func (f *interceptedForward) ResumeModified(
+	inAmountMsat fn.Option[lnwire.MilliSatoshi],
 	outAmountMsat fn.Option[lnwire.MilliSatoshi],
 	outWireCustomRecords fn.Option[record.CustomSet]) error {
 
@@ -691,6 +697,11 @@ func (f *interceptedForward) ResumeModified(
 		return fmt.Errorf("failed to encode custom records: %w",
 			err)
 	}
+
+	// Set the incoming amount, if it is provided, on the packet.
+	inAmountMsat.WhenSome(func(amount lnwire.MilliSatoshi) {
+		f.packet.incomingAmount = amount
+	})
 
 	// Modify the wire message contained in the packet.
 	switch htlc := f.packet.htlc.(type) {
