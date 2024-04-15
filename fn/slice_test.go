@@ -295,3 +295,37 @@ func TestPropForEachConcOutperformsMapWhenExpensive(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPropFindIdxFindIdentity(t *testing.T) {
+	f := func(div, mod uint8, s []uint8) bool {
+		if div == 0 || div == 1 {
+			return true
+		}
+
+		pred := func(i uint8) bool {
+			return i%div == mod
+		}
+
+		foundIdx := FindIdx(pred, s)
+
+		// onlyVal :: Option[T2[A, B]] -> Option[B]
+		onlyVal := MapOption(func(t2 T2[int, uint8]) uint8 {
+			return t2.snd
+		})
+
+		valuesEqual := Find(pred, s) == onlyVal(foundIdx)
+
+		idxGetsVal := ElimOption(
+			foundIdx,
+			func() bool { return true },
+			func(t2 T2[int, uint8]) bool {
+				return s[t2.fst] == t2.snd
+			})
+
+		return valuesEqual && idxGetsVal
+	}
+
+	if err := quick.Check(f, nil); err != nil {
+		t.Fatal(err)
+	}
+}
