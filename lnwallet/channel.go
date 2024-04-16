@@ -207,6 +207,7 @@ func PayDescsFromRemoteLogUpdates(chanID lnwire.ShortChannelID, height uint64,
 					Index:  uint16(i),
 				},
 				BlindingPoint: wireMsg.BlindingPoint,
+				CustomRecords: wireMsg.CustomRecords.Copy(),
 			}
 			pd.OnionBlob = make([]byte, len(wireMsg.OnionBlob))
 			copy(pd.OnionBlob[:], wireMsg.OnionBlob[:])
@@ -1147,6 +1148,7 @@ func (lc *LightningChannel) logUpdateToPayDesc(logUpdate *channeldb.LogUpdate,
 			LogIndex:              logUpdate.LogIndex,
 			addCommitHeightRemote: commitHeight,
 			BlindingPoint:         wireMsg.BlindingPoint,
+			CustomRecords:         wireMsg.CustomRecords.Copy(),
 		}
 		pd.OnionBlob = make([]byte, len(wireMsg.OnionBlob))
 		copy(pd.OnionBlob[:], wireMsg.OnionBlob[:])
@@ -1352,6 +1354,7 @@ func (lc *LightningChannel) remoteLogUpdateToPayDesc(logUpdate *channeldb.LogUpd
 			LogIndex:             logUpdate.LogIndex,
 			addCommitHeightLocal: commitHeight,
 			BlindingPoint:        wireMsg.BlindingPoint,
+			CustomRecords:        wireMsg.CustomRecords.Copy(),
 		}
 		pd.OnionBlob = make([]byte, len(wireMsg.OnionBlob))
 		copy(pd.OnionBlob, wireMsg.OnionBlob[:])
@@ -3147,11 +3150,11 @@ func genRemoteHtlcSigJobs(keyRing *CommitmentKeyRing,
 	var err error
 	cancelChan := make(chan struct{})
 
+	diskCommit := remoteCommitView.toDiskCommit(lntypes.Remote)
 	auxResult, err := fn.MapOptionZ(
 		leafStore, func(s AuxLeafStore) fn.Result[CommitDiffAuxResult] {
 			return s.FetchLeavesFromCommit(
-				NewAuxChanState(chanState),
-				*remoteCommitView.toDiskCommit(lntypes.Remote),
+				NewAuxChanState(chanState), *diskCommit,
 				*keyRing,
 			)
 		},
@@ -3331,8 +3334,7 @@ func genRemoteHtlcSigJobs(keyRing *CommitmentKeyRing,
 // new commitment to the remote party. The commit diff returned contains all
 // information necessary for retransmission.
 func (lc *LightningChannel) createCommitDiff(newCommit *commitment,
-	commitSig lnwire.Sig, htlcSigs []lnwire.Sig) (*channeldb.CommitDiff,
-	error) {
+	commitSig lnwire.Sig, htlcSigs []lnwire.Sig) *channeldb.CommitDiff {
 
 	// First, we need to convert the funding outpoint into the ID that's
 	// used on the wire to identify this channel. We'll use this shortly
@@ -3384,6 +3386,7 @@ func (lc *LightningChannel) createCommitDiff(newCommit *commitment,
 				Expiry:        pd.Timeout,
 				PaymentHash:   pd.RHash,
 				BlindingPoint: pd.BlindingPoint,
+				CustomRecords: pd.CustomRecords.Copy(),
 			}
 			copy(htlc.OnionBlob[:], pd.OnionBlob)
 			logUpdate.UpdateMsg = htlc
@@ -3469,7 +3472,7 @@ func (lc *LightningChannel) createCommitDiff(newCommit *commitment,
 		ClosedCircuitKeys: closedCircuitKeys,
 		AddAcks:           ackAddRefs,
 		SettleFailAcks:    settleFailRefs,
-	}, nil
+	}
 }
 
 // getUnsignedAckedUpdates returns all remote log updates that we haven't
@@ -3522,6 +3525,7 @@ func (lc *LightningChannel) getUnsignedAckedUpdates() []channeldb.LogUpdate {
 				Expiry:        pd.Timeout,
 				PaymentHash:   pd.RHash,
 				BlindingPoint: pd.BlindingPoint,
+				CustomRecords: pd.CustomRecords.Copy(),
 			}
 			copy(htlc.OnionBlob[:], pd.OnionBlob)
 			logUpdate.UpdateMsg = htlc
@@ -4102,10 +4106,7 @@ func (lc *LightningChannel) SignNextCommitment() (*NewCommitState, error) {
 	// As we're about to proposer a new commitment state for the remote
 	// party, we'll write this pending state to disk before we exit, so we
 	// can retransmit it if necessary.
-	commitDiff, err := lc.createCommitDiff(newCommitView, sig, htlcSigs)
-	if err != nil {
-		return nil, err
-	}
+	commitDiff := lc.createCommitDiff(newCommitView, sig, htlcSigs)
 	err = lc.channelState.AppendRemoteCommitChain(commitDiff)
 	if err != nil {
 		return nil, err
@@ -4628,13 +4629,12 @@ func genHtlcSigValidationJobs(chanState *channeldb.OpenChannel,
 		len(localCommitmentView.outgoingHTLCs)
 	verifyJobs := make([]VerifyJob, 0, numHtlcs)
 
+	diskCommit := localCommitmentView.toDiskCommit(lntypes.Local)
 	auxResult, err := fn.MapOptionZ(
 		leafStore, func(s AuxLeafStore) fn.Result[CommitDiffAuxResult] {
 			return s.FetchLeavesFromCommit(
-				NewAuxChanState(chanState),
-				*localCommitmentView.toDiskCommit(
-					lntypes.Local,
-				), *keyRing,
+				NewAuxChanState(chanState), *diskCommit,
+				*keyRing,
 			)
 		},
 	).Unpack()
@@ -5564,6 +5564,7 @@ func (lc *LightningChannel) ReceiveRevocation(revMsg *lnwire.RevokeAndAck) (
 				Expiry:        pd.Timeout,
 				PaymentHash:   pd.RHash,
 				BlindingPoint: pd.BlindingPoint,
+				CustomRecords: pd.CustomRecords.Copy(),
 			}
 			copy(htlc.OnionBlob[:], pd.OnionBlob)
 			logUpdate.UpdateMsg = htlc
@@ -5909,9 +5910,7 @@ func (lc *LightningChannel) htlcAddDescriptor(htlc *lnwire.UpdateAddHTLC,
 		OnionBlob:      htlc.OnionBlob[:],
 		OpenCircuitKey: openKey,
 		BlindingPoint:  htlc.BlindingPoint,
-		// TODO(guggero): Add custom records from HTLC here once we have
-		// the custom records in the HTLC struct (later commits in this
-		// PR).
+		CustomRecords:  htlc.CustomRecords.Copy(),
 	}
 }
 
@@ -5972,9 +5971,7 @@ func (lc *LightningChannel) ReceiveHTLC(htlc *lnwire.UpdateAddHTLC) (uint64,
 		HtlcIndex:     lc.remoteUpdateLog.htlcCounter,
 		OnionBlob:     htlc.OnionBlob[:],
 		BlindingPoint: htlc.BlindingPoint,
-		// TODO(guggero): Add custom records from HTLC here once we have
-		// the custom records in the HTLC struct (later commits in this
-		// PR).
+		CustomRecords: htlc.CustomRecords.Copy(),
 	}
 
 	localACKedIndex := lc.remoteCommitChain.tail().ourMessageIndex

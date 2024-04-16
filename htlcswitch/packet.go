@@ -95,8 +95,12 @@ type htlcPacket struct {
 	outgoingTimeout uint32
 
 	// customRecords are user-defined records in the custom type range that
-	// were included in the payload.
+	// were included in the onion payload.
 	customRecords record.CustomSet
+
+	// inWireCustomRecords are custom type range TLVs that are included
+	// in the incoming update_add_htlc wire message.
+	inWireCustomRecords record.CustomSet
 
 	// originalOutgoingChanID is used when sending back failure messages.
 	// It is only used for forwarded Adds on option_scid_alias channels.

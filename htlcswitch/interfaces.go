@@ -364,6 +364,10 @@ type InterceptedPacket struct {
 	// OnionBlob is the onion packet for the next hop
 	OnionBlob [lnwire.OnionPacketSize]byte
 
+	// InWireCustomRecords are user-defined p2p wire message records that
+	// were defined by the peer that forwarded this HTLC to us.
+	InWireCustomRecords record.CustomSet
+
 	// AutoFailHeight is the block height at which this intercept will be
 	// failed back automatically.
 	AutoFailHeight int32
