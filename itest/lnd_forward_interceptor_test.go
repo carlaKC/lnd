@@ -413,10 +413,10 @@ func testForwardInterceptorModifiedHtlc(ht *lntest.HarnessTest) {
 	newOutgoingAmountMsat := packet.OutgoingAmountMsat
 
 	err := bobInterceptor.Send(&routerrpc.ForwardHtlcInterceptResponse{
-		IncomingCircuitKey: packet.IncomingCircuitKey,
-		OutgoingAmountMsat: newOutgoingAmountMsat,
-		CustomRecords:      customRecords,
-		Action:             action,
+		IncomingCircuitKey:            packet.IncomingCircuitKey,
+		OutgoingAmountMsat:            newOutgoingAmountMsat,
+		OutgoingHtlcWireCustomRecords: customRecords,
+		Action:                        action,
 	})
 	require.NoError(ht, err, "failed to send request")
 
