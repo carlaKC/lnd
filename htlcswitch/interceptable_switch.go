@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/go-errors/errors"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb/models"
@@ -631,6 +632,9 @@ func (f *interceptedForward) Packet() InterceptedPacket {
 		CustomRecords:  f.packet.customRecords,
 		OnionBlob:      f.htlc.OnionBlob,
 		AutoFailHeight: f.autoFailHeight,
+		IncomingWireCustomRecords: record.CustomSet(
+			f.htlc.CustomRecords,
+		),
 	}
 }
 
@@ -702,6 +706,8 @@ func (f *interceptedForward) ResumeModified(
 				err)
 		}
 	}
+
+	log.Tracef("Forwarding packet %v", spew.Sdump(f.packet))
 
 	// Forward to the switch. A link quit channel isn't needed, because we
 	// are on a different thread now.

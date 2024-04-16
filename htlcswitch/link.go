@@ -30,6 +30,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/queue"
 	"github.com/lightningnetwork/lnd/ticker"
+	"github.com/lightningnetwork/lnd/tlv"
 )
 
 func init() {
@@ -3375,6 +3376,28 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 					BlindingPoint: fwdInfo.NextBlinding,
 				}
 
+				err = fn.MapOptionZ(
+					pd.CustomRecords,
+					func(b tlv.Blob) error {
+						f := lnwire.ParseCustomRecords
+						r, err := f(b)
+						if err != nil {
+							return err
+						}
+
+						addMsg.CustomRecords = r
+
+						return nil
+					},
+				)
+				if err != nil {
+					l.fail(LinkFailureError{
+						code: ErrInternalError,
+					}, err.Error())
+
+					return
+				}
+
 				// Finally, we'll encode the onion packet for
 				// the _next_ hop using the hop iterator
 				// decoded for the current hop.
@@ -3419,6 +3442,26 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				Amount:        fwdInfo.AmountToForward,
 				PaymentHash:   pd.RHash,
 				BlindingPoint: fwdInfo.NextBlinding,
+			}
+
+			err = fn.MapOptionZ(
+				pd.CustomRecords, func(b tlv.Blob) error {
+					r, err := lnwire.ParseCustomRecords(b)
+					if err != nil {
+						return err
+					}
+
+					addMsg.CustomRecords = r
+
+					return nil
+				},
+			)
+			if err != nil {
+				l.fail(LinkFailureError{
+					code: ErrInternalError,
+				}, err.Error())
+
+				return
 			}
 
 			// Finally, we'll encode the onion packet for the

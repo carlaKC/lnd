@@ -31,16 +31,21 @@ func NewCustomRecordsFromTlvTypeMap(tlvMap tlv.TypeMap) (CustomRecords,
 	// Validate the custom records.
 	err := customRecords.Validate()
 	if err != nil {
+
 		return nil, fmt.Errorf("custom records from tlv map "+
 			"validation error: %v", err)
+	}
+
+	if len(customRecords) == 0 {
+		return nil, nil
 	}
 
 	return customRecords, nil
 }
 
-// NewCustomRecordsFromTlvBlob creates a new CustomRecords instance from a
+// ParseCustomRecords creates a new CustomRecords instance from a
 // tlv.Blob.
-func NewCustomRecordsFromTlvBlob(b tlv.Blob) (CustomRecords, error) {
+func ParseCustomRecords(b tlv.Blob) (CustomRecords, error) {
 	stream, err := tlv.NewStream()
 	if err != nil {
 		return nil, fmt.Errorf("error creating stream: %w", err)
