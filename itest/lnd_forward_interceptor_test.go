@@ -479,8 +479,7 @@ func testForwardInterceptorModifiedHtlc(ht *lntest.HarnessTest) {
 	ht.CloseChannel(bob, cpBC)
 }
 
-// testForwardInterceptorFirstHopRecords
-func testForwardInterceptorFirstHopRecords(ht *lntest.HarnessTest) {
+func testForwardInterceptorWireRecords(ht *lntest.HarnessTest) {
 	// Initialize the test context with 3 connected nodes.
 	ts := newInterceptorTestScenario(ht)
 
@@ -499,6 +498,9 @@ func testForwardInterceptorFirstHopRecords(ht *lntest.HarnessTest) {
 	// Make sure Alice is aware of channel Bob=>Carol.
 	ht.AssertTopologyChannelOpen(alice, cpBC)
 
+	// Connect an interceptor to Bob's node.
+	bobInterceptor, cancelBobInterceptor := bob.RPC.HtlcInterceptor()
+
 	req := &lnrpc.Invoice{ValueMsat: 1000}
 	addResponse := carol.RPC.AddInvoice(req)
 	invoice := carol.RPC.LookupInvoice(addResponse.RHash)
@@ -511,45 +513,32 @@ func testForwardInterceptorFirstHopRecords(ht *lntest.HarnessTest) {
 			65537: []byte("test"),
 		},
 	}
-	stream := alice.RPC.SendPayment(sendReq)
-	ht.AssertPaymentStatusFromStream(stream, lnrpc.Payment_SUCCEEDED)
 
-	// Formulate custom records target log string.
-	var (
-		cr  record.CustomSet = make(record.CustomSet)
-		buf bytes.Buffer
-	)
+	_ = alice.RPC.SendPayment(sendReq)
 
-	cr[65537] = []byte("test")
+	// We start the htlc interceptor with a simple implementation that saves
+	// all intercepted packets. These packets are held to simulate a
+	// pending payment.
+	packet := ht.ReceiveHtlcInterceptor(bobInterceptor)
 
-	err := cr.Encode(&buf)
-	require.NoError(ht, err, "failed to encode custom records")
-	customRecordsBytes := buf.Bytes()
+	require.Len(ht, packet.WireCustomRecords, 1)
 
-	targetCustomRecordsStr := fmt.Sprintf(
-		"custom_records_blob=%x", customRecordsBytes,
-	)
+	val, ok := packet.WireCustomRecords[65537]
+	require.True(ht, ok, "expected custom record")
+	require.Equal(ht, []byte("test"), val)
 
-	logEntryCheck := func(logEntry string) bool {
-		return strings.Contains(logEntry, "custom_records_blob") &&
-			strings.Contains(logEntry, targetCustomRecordsStr)
-	}
+	action := routerrpc.ResolveHoldForwardAction_RESUME_MODIFIED
+	newOutgoingAmountMsat := packet.OutgoingAmountMsat + 800
 
-	require.Eventually(ht, func() bool {
-		ctx := context.Background()
-		dbgInfo, err := bob.RPC.LN.GetDebugInfo(
-			ctx, &lnrpc.GetDebugInfoRequest{},
-		)
-		require.NoError(ht, err, "failed to get Barol node debug info")
+	err := bobInterceptor.Send(&routerrpc.ForwardHtlcInterceptResponse{
+		IncomingCircuitKey: packet.IncomingCircuitKey,
+		OutgoingAmountMsat: newOutgoingAmountMsat,
+		Action:             action,
+	})
+	require.NoError(ht, err, "failed to send request")
 
-		for _, logEntry := range dbgInfo.Log {
-			if logEntryCheck(logEntry) {
-				return true
-			}
-		}
-
-		return false
-	}, defaultTimeout, time.Second)
+	// Cancel the context, which will disconnect Bob's interceptor.
+	cancelBobInterceptor()
 
 	// Assert that the payment was successful.
 	var preimage lntypes.Preimage
