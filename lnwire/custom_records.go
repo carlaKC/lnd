@@ -14,6 +14,26 @@ const (
 	MinCustomRecordsTlvType = 65536
 )
 
+// ParseCustomRecords decodes a set of custom records from a byte slice.
+func ParseCustomRecords(b tlv.Blob) (CustomRecords, error) {
+	stream, err := tlv.NewStream()
+	if err != nil {
+		return nil, fmt.Errorf("error creating stream: %w", err)
+	}
+
+	typeMap, err := stream.DecodeWithParsedTypes(bytes.NewReader(b))
+	if err != nil {
+		return nil, fmt.Errorf("error decoding HTLC record: %w", err)
+	}
+
+	customRecords := make(CustomRecords, len(typeMap))
+	for k, v := range typeMap {
+		customRecords[uint64(k)] = v
+	}
+
+	return customRecords, nil
+}
+
 // CustomRecords stores a set of custom key/value pairs. Map keys are TLV types
 // which must be greater than or equal to MinCustomRecordsTlvType.
 type CustomRecords map[uint64][]byte

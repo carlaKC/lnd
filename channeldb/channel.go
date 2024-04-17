@@ -2550,6 +2550,8 @@ type HTLC struct {
 	// HTLC. It is stored in the ExtraData field, which is used to store
 	// a TLV stream of additional information associated with the HTLC.
 	BlindingPoint lnwire.BlindingPointRecord
+
+	CustomRecords lnwire.CustomRecords
 }
 
 // serializeExtraData encodes a TLV stream of extra data to be stored with a

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/go-errors/errors"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb/models"
@@ -622,15 +623,16 @@ func (f *interceptedForward) Packet() InterceptedPacket {
 			ChanID: f.packet.incomingChanID,
 			HtlcID: f.packet.incomingHTLCID,
 		},
-		OutgoingChanID: f.packet.outgoingChanID,
-		Hash:           f.htlc.PaymentHash,
-		OutgoingExpiry: f.htlc.Expiry,
-		OutgoingAmount: f.htlc.Amount,
-		IncomingAmount: f.packet.incomingAmount,
-		IncomingExpiry: f.packet.incomingTimeout,
-		CustomRecords:  f.packet.customRecords,
-		OnionBlob:      f.htlc.OnionBlob,
-		AutoFailHeight: f.autoFailHeight,
+		OutgoingChanID:    f.packet.outgoingChanID,
+		Hash:              f.htlc.PaymentHash,
+		OutgoingExpiry:    f.htlc.Expiry,
+		OutgoingAmount:    f.htlc.Amount,
+		IncomingAmount:    f.packet.incomingAmount,
+		IncomingExpiry:    f.packet.incomingTimeout,
+		CustomRecords:     f.packet.customRecords,
+		OnionBlob:         f.htlc.OnionBlob,
+		AutoFailHeight:    f.autoFailHeight,
+		WireCustomRecords: record.CustomSet(f.htlc.CustomRecords),
 	}
 }
 
@@ -702,6 +704,8 @@ func (f *interceptedForward) ResumeModified(
 				err)
 		}
 	}
+
+	log.Tracef("Forwarding packet %v", spew.Sdump(f.packet))
 
 	// Forward to the switch. A link quit channel isn't needed, because we
 	// are on a different thread now.
