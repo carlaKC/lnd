@@ -4115,11 +4115,23 @@ func (l *channelLink) failf(linkErr LinkFailureError, format string,
 // link is associated with. The funding blob represents static information about
 // the channel that was created at channel funding time.
 func (l *channelLink) FundingCustomBlob() fn.Option[tlv.Blob] {
+	if l.channel == nil {
+		return fn.None[tlv.Blob]()
+	}
+
+	if l.channel.State() == nil {
+		return fn.None[tlv.Blob]()
+	}
+
 	return l.channel.State().CustomBlob
 }
 
 // CommitmentCustomBlob returns the custom blob of the current local commitment
 // of the channel that this link is associated with.
 func (l *channelLink) CommitmentCustomBlob() fn.Option[tlv.Blob] {
+	if l.channel == nil {
+		return fn.None[tlv.Blob]()
+	}
+
 	return l.channel.LocalCommitmentBlob()
 }
