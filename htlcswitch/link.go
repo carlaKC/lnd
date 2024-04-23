@@ -3293,7 +3293,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 
 		heightNow := l.cfg.BestHeight()
 
-		pld, err := chanIterator.HopPayload()
+		pld, _, err := chanIterator.HopPayload()
 		if err != nil {
 			// If we're unable to process the onion payload, or we
 			// received invalid onion payload failure, then we
