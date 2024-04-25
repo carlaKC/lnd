@@ -1270,6 +1270,7 @@ func newServer(cfg *Config, listenAddrs []net.Addr,
 
 			return &pc.Incoming
 		},
+		AuxLeafStore: implCfg.AuxLeafStore,
 	}, dbs.ChanStateDB)
 
 	// Select the configuration and funding parameters for Bitcoin.
@@ -1604,6 +1605,7 @@ func newServer(cfg *Config, listenAddrs []net.Addr,
 
 			br, err := lnwallet.NewBreachRetribution(
 				channel, commitHeight, 0, nil,
+				implCfg.AuxLeafStore,
 			)
 			if err != nil {
 				return nil, 0, err
@@ -4020,6 +4022,7 @@ func (s *server) peerConnected(conn net.Conn, connReq *connmgr.ConnReq,
 		DisallowRouteBlinding:  s.cfg.ProtocolOptions.NoRouteBlinding(),
 		MaxFeeExposure:         thresholdMSats,
 		Quit:                   s.quit,
+		AuxLeafStore:           s.implCfg.AuxLeafStore,
 		MsgRouter:              s.implCfg.MsgRouter,
 	}
 

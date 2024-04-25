@@ -17,8 +17,12 @@ import (
 	"github.com/btcsuite/btcwallet/wallet/txauthor"
 	"github.com/btcsuite/btcwallet/wtxmgr"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/fn"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/tlv"
 )
 
 var (
@@ -396,4 +400,46 @@ func (*mockChainIO) GetBlockHeader(
 	blockHash *chainhash.Hash) (*wire.BlockHeader, error) {
 
 	return nil, nil
+}
+
+type MockAuxLeafStore struct{}
+
+// FetchLeavesFromView attempts to fetch the auxiliary leaves that
+// correspond to the passed aux blob, and pending original (unfiltered)
+// HTLC view.
+func (*MockAuxLeafStore) FetchLeavesFromView(_ *channeldb.OpenChannel,
+	_ tlv.Blob, _ *HtlcView, _ lntypes.ChannelParty,
+	_, _ lnwire.MilliSatoshi,
+	_ CommitmentKeyRing) (fn.Option[CommitAuxLeaves], CommitSortFunc,
+	error) {
+
+	return fn.None[CommitAuxLeaves](), nil, nil
+}
+
+// FetchLeavesFromCommit attempts to fetch the auxiliary leaves that
+// correspond to the passed aux blob, and an existing channel
+// commitment.
+func (*MockAuxLeafStore) FetchLeavesFromCommit(_ *channeldb.OpenChannel,
+	_ channeldb.ChannelCommitment,
+	_ CommitmentKeyRing) (fn.Option[CommitAuxLeaves], error) {
+
+	return fn.None[CommitAuxLeaves](), nil
+}
+
+// FetchLeavesFromRevocation attempts to fetch the auxiliary leaves
+// from a channel revocation that stores balance + blob information.
+func (*MockAuxLeafStore) FetchLeavesFromRevocation(
+	_ *channeldb.RevocationLog) (fn.Option[CommitAuxLeaves], error) {
+
+	return fn.None[CommitAuxLeaves](), nil
+}
+
+// ApplyHtlcView serves as the state transition function for the custom
+// channel's blob. Given the old blob, and an HTLC view, then a new
+// blob should be returned that reflects the pending updates.
+func (*MockAuxLeafStore) ApplyHtlcView(_ *channeldb.OpenChannel, _ tlv.Blob,
+	_ *HtlcView, _ lntypes.ChannelParty, _, _ lnwire.MilliSatoshi,
+	_ CommitmentKeyRing) (fn.Option[tlv.Blob], error) {
+
+	return fn.None[tlv.Blob](), nil
 }
