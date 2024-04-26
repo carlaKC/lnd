@@ -996,6 +996,11 @@ func testErrorHandlingOnChainFailure(ht *lntest.HarnessTest) {
 	// HTLC from now on.
 	restartCarol := ht.SuspendNode(testCase.carol)
 
+	// Mine blocks so that Bob will claim his CSV delayed local commitment.
+	ht.MineBlocks(node.DefaultCSV + 1)
+	ht.Miner.AssertNumTxsInMempool(1)
+	ht.Miner.MineBlocksAndAssertNumTxes(1, 1)
+
 	// Restart bob so that we can test that he's able to recover everything
 	// he needs to claim a blinded HTLC.
 	ht.RestartNode(ht.Bob)
@@ -1011,7 +1016,7 @@ func testErrorHandlingOnChainFailure(ht *lntest.HarnessTest) {
 	// suspended Carol we don't need to account for her commitment output
 	// claim.
 	ht.Miner.AssertNumTxsInMempool(1)
-	ht.MineBlocks(1)
+	ht.Miner.MineBlocksAndAssertNumTxes(1, 1)
 
 	// Wait for the HTLC to reflect as failed for Alice.
 	paymentStream := ht.Alice.RPC.TrackPaymentV2(hash[:])
@@ -1027,7 +1032,7 @@ func testErrorHandlingOnChainFailure(ht *lntest.HarnessTest) {
 	// expires plus one block to trigger his sweep and then mine it.
 	ht.MineBlocks(node.DefaultCSV + 1)
 	ht.Miner.AssertNumTxsInMempool(1)
-	ht.MineBlocks(1)
+	ht.Miner.MineBlocksAndAssertNumTxes(1, 1)
 
 	// Bring carol back up so that we can close out the rest of our
 	// channels cooperatively. She requires an interceptor to start up
