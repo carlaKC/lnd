@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/stretchr/testify/require"
@@ -729,4 +730,37 @@ func (h *HarnessRPC) LookupHtlcResolutionAssertErr(
 	require.Error(h, err, "expected an error")
 
 	return err
+}
+
+// LogLineContains waits for a log entry to appear in the node's log that
+// contains the expected substrings.
+func (h *HarnessRPC) LogLineContains(subStrings []string) {
+	// logEntryCheck is a helper function that checks if the log entry
+	// contains the expected strings.
+	logEntryCheck := func(logLine string) bool {
+		for _, subStr := range subStrings {
+			if !strings.Contains(logLine, subStr) {
+				return false
+			}
+		}
+
+		return true
+	}
+
+	// Wait for the log entry to appear in the node's log.
+	require.Eventually(h, func() bool {
+		ctx := context.Background()
+		dbgInfo, err := h.LN.GetDebugInfo(
+			ctx, &lnrpc.GetDebugInfoRequest{},
+		)
+		require.NoError(h, err, "failed to get node debug info")
+
+		for _, logEntry := range dbgInfo.Log {
+			if logEntryCheck(logEntry) {
+				return true
+			}
+		}
+
+		return false
+	}, DefaultTimeout, 200*time.Millisecond)
 }
