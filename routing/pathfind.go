@@ -467,6 +467,10 @@ type RestrictParams struct {
 	// BlindedPaymentPathSet is necessary to determine the hop size of the
 	// last/exit hop.
 	BlindedPaymentPathSet *BlindedPaymentPathSet
+
+	// FirstHopCustomRecords includes any records that should be included in
+	// the update_add_htlc message towards our peer.
+	FirstHopCustomRecords record.CustomSet
 }
 
 // PathFindingConfig defines global parameters that control the trade-off in
@@ -492,10 +496,12 @@ type PathFindingConfig struct {
 // channels of the given node. The second return parameters is the total
 // available balance.
 func getOutgoingBalance(node route.Vertex, outgoingChans map[uint64]struct{},
-	bandwidthHints bandwidthHints,
-	g Graph) (lnwire.MilliSatoshi, lnwire.MilliSatoshi, error) {
+	bandwidthHints bandwidthHints, g Graph,
+	htlcBlob fn.Option[tlv.Blob]) (lnwire.MilliSatoshi, lnwire.MilliSatoshi,
+	error) {
 
 	var max, total lnwire.MilliSatoshi
+
 	cb := func(channel *channeldb.DirectedChannel) error {
 		if !channel.OutPolicySet {
 			return nil
@@ -511,7 +517,7 @@ func getOutgoingBalance(node route.Vertex, outgoingChans map[uint64]struct{},
 		}
 
 		bandwidth, ok := bandwidthHints.availableChanBandwidth(
-			chanID, 0, fn.None[tlv.Blob](),
+			chanID, 0, htlcBlob,
 		)
 
 		// If the bandwidth is not available, use the channel capacity.
@@ -525,7 +531,7 @@ func getOutgoingBalance(node route.Vertex, outgoingChans map[uint64]struct{},
 			max = bandwidth
 		}
 
-		total += bandwidth
+		total = overflowSafeAdd(total, bandwidth)
 
 		return nil
 	}
@@ -614,8 +620,15 @@ func findPath(g *graphParams, r *RestrictParams, cfg *PathFindingConfig,
 	// If we are routing from ourselves, check that we have enough local
 	// balance available.
 	if source == self {
+		customRecords := lnwire.CustomRecords(r.FirstHopCustomRecords)
+		firstHopData, err := customRecords.Serialize()
+		if err != nil {
+			return nil, 0, err
+		}
+
 		max, total, err := getOutgoingBalance(
 			self, outgoingChanMap, g.bandwidthHints, g.graph,
+			fn.Some[tlv.Blob](firstHopData),
 		)
 		if err != nil {
 			return nil, 0, err
@@ -1050,9 +1063,22 @@ func findPath(g *graphParams, r *RestrictParams, cfg *PathFindingConfig,
 				continue
 			}
 
+			var firstHopBlob fn.Option[tlv.Blob]
+			if len(r.FirstHopCustomRecords) > 0 {
+				firstHopTLVs := lnwire.CustomRecords(
+					r.FirstHopCustomRecords,
+				)
+				firstHopData, err := firstHopTLVs.Serialize()
+				if err != nil {
+					return nil, 0, err
+				}
+
+				firstHopBlob = fn.Some(firstHopData)
+			}
+
 			edge := edgeUnifier.getEdge(
 				netAmountReceived, g.bandwidthHints,
-				partialPath.outboundFee, fn.None[tlv.Blob](),
+				partialPath.outboundFee, firstHopBlob,
 			)
 
 			if edge == nil {
@@ -1446,4 +1472,15 @@ func lastHopPayloadSize(r *RestrictParams, finalHtlcExpiry int32,
 
 	// The final hop does not have a short chanID set.
 	return finalHop.PayloadSize(0)
+}
+
+// overflowSafeAdd adds two MilliSatoshi values and returns the result. If an
+// overflow could occur, the maximum uint64 value is returned instead.
+func overflowSafeAdd(x, y lnwire.MilliSatoshi) lnwire.MilliSatoshi {
+	if y > math.MaxUint64-x {
+		// Overflow would occur, return maximum uint64 value.
+		return math.MaxUint64
+	}
+
+	return x + y
 }
