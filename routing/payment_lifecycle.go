@@ -11,6 +11,7 @@ import (
 	sphinx "github.com/lightningnetwork/lightning-onion"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/channeldb/models"
+	"github.com/lightningnetwork/lnd/fn"
 	"github.com/lightningnetwork/lnd/htlcswitch"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -366,7 +367,8 @@ func (p *paymentLifecycle) requestRoute(
 	// Query our payment session to construct a route.
 	rt, err := p.paySession.RequestRoute(
 		ps.RemainingAmt, remainingFees,
-		uint32(ps.NumAttemptsInFlight), uint32(p.currentHeight), nil,
+		uint32(ps.NumAttemptsInFlight), uint32(p.currentHeight),
+		p.firstHopCustomRecords,
 	)
 
 	// Exit early if there's no error.
@@ -686,6 +688,17 @@ func (p *paymentLifecycle) sendAttempt(
 		CustomRecords: lnwire.CustomRecords(p.firstHopCustomRecords),
 	}
 
+	// Allow the traffic shaper to add custom records to the outgoing HTLC
+	// and also adjust the amount if needed.
+	err := p.amendHtlcCustomRecords(rt, htlcAdd)
+	if err != nil {
+		log.Errorf("Failed to amend custom records: attempt=%d in "+
+			"payment=%v, err:%v", attempt.AttemptID,
+			p.identifier, err)
+
+		return p.failAttempt(attempt.AttemptID, err)
+	}
+
 	// Generate the raw encoded sphinx packet to be included along
 	// with the htlcAdd message that we send directly to the
 	// switch.
@@ -720,6 +733,63 @@ func (p *paymentLifecycle) sendAttempt(
 	return &attemptResult{
 		attempt: attempt,
 	}, nil
+}
+
+// amendHtlcCustomRecords is a function that calls the traffic shaper to allow
+// it to add custom records to the outgoing HTLC and also adjust the amount if
+// needed.
+func (p *paymentLifecycle) amendHtlcCustomRecords(rt route.Route,
+	htlcAdd *lnwire.UpdateAddHTLC) error {
+
+	// extraDataRequest is a helper struct to pass the custom records and
+	// amount back from the traffic shaper.
+	type extraDataRequest struct {
+		customRecords fn.Option[lnwire.CustomRecords]
+
+		amount fn.Option[lnwire.MilliSatoshi]
+	}
+
+	// If a hook exists that may affect our outgoing message, we call it now
+	// and apply its side effects to the UpdateAddHTLC message.
+	result, err := fn.MapOptionZ(
+		p.router.cfg.TrafficShaper,
+		func(ts TlvTrafficShaper) fn.Result[extraDataRequest] {
+			newAmt, newRecords, err := ts.ProduceHtlcExtraData(
+				rt.TotalAmount, htlcAdd.CustomRecords,
+			)
+			if err != nil {
+				return fn.Err[extraDataRequest](err)
+			}
+
+			// Make sure we only received valid records.
+			if err := newRecords.Validate(); err != nil {
+				return fn.Err[extraDataRequest](err)
+			}
+
+			log.Debugf("TLV traffic shaper returned custom "+
+				"records %v and amount %d msat for HTLC",
+				spew.Sdump(newRecords), newAmt)
+
+			return fn.Ok(extraDataRequest{
+				customRecords: fn.Some(newRecords),
+				amount:        fn.Some(newAmt),
+			})
+		},
+	).Unpack()
+	if err != nil {
+		return fmt.Errorf("traffic shaper failed to produce extra "+
+			"data: %w", err)
+	}
+
+	// Apply the side effects to the UpdateAddHTLC message.
+	result.customRecords.WhenSome(func(records lnwire.CustomRecords) {
+		htlcAdd.CustomRecords = records
+	})
+	result.amount.WhenSome(func(amount lnwire.MilliSatoshi) {
+		htlcAdd.Amount = amount
+	})
+
+	return nil
 }
 
 // failAttemptAndPayment fails both the payment and its attempt via the
