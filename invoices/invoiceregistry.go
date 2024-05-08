@@ -919,6 +919,7 @@ func (i *InvoiceRegistry) processAMP(ctx invoiceUpdateCtx) error {
 func (i *InvoiceRegistry) NotifyExitHopHtlc(rHash lntypes.Hash,
 	amtPaid lnwire.MilliSatoshi, expiry uint32, currentHeight int32,
 	circuitKey CircuitKey, hodlChan chan<- interface{},
+	wireCustomRecords lnwire.CustomRecords,
 	payload Payload) (HtlcResolution, error) {
 
 	// Create the update context containing the relevant details of the
@@ -930,6 +931,7 @@ func (i *InvoiceRegistry) NotifyExitHopHtlc(rHash lntypes.Hash,
 		expiry:               expiry,
 		currentHeight:        currentHeight,
 		finalCltvRejectDelta: i.cfg.FinalCltvRejectDelta,
+		wireCustomRecords:    wireCustomRecords,
 		customRecords:        payload.CustomRecords(),
 		mpp:                  payload.MultiPath(),
 		amp:                  payload.AMPRecord(),
@@ -1036,6 +1038,7 @@ func (i *InvoiceRegistry) notifyExitHopHtlcLocked(
 		// the interceptor's client an opportunity to manipulate the
 		// settlement process.
 		clientReq := HtlcModifyRequest{
+			WireCustomRecords:  ctx.wireCustomRecords,
 			ExitHtlcCircuitKey: ctx.circuitKey,
 			ExitHtlcAmt:        ctx.amtPaid,
 			ExitHtlcExpiry:     ctx.expiry,
