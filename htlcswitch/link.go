@@ -3384,7 +3384,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 						if err != nil {
 							return err
 						}
-
+						// HERE
 						addMsg.CustomRecords = r
 
 						return nil
@@ -3451,6 +3451,7 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 						return err
 					}
 
+					// HERE
 					addMsg.CustomRecords = r
 
 					return nil
