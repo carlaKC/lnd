@@ -374,6 +374,10 @@ type Config struct {
 	// invalid.
 	DisallowRouteBlinding bool
 
+	// ForwardExperimentalEndorsement is a closure that indicates whether
+	// experimental endorsement signals should be set.
+	ForwardExperimentalEndorsement func() bool
+
 	// Quit is the server's quit channel. If this is closed, we halt operation.
 	Quit chan struct{}
 }
@@ -1153,23 +1157,24 @@ func (p *Brontide) addLink(chanPoint *wire.OutPoint,
 		PendingCommitTicker: ticker.New(
 			p.cfg.PendingCommitInterval,
 		),
-		BatchSize:               p.cfg.ChannelCommitBatchSize,
-		UnsafeReplay:            p.cfg.UnsafeReplay,
-		MinFeeUpdateTimeout:     htlcswitch.DefaultMinLinkFeeUpdateTimeout,
-		MaxFeeUpdateTimeout:     htlcswitch.DefaultMaxLinkFeeUpdateTimeout,
-		OutgoingCltvRejectDelta: p.cfg.OutgoingCltvRejectDelta,
-		TowerClient:             p.cfg.TowerClient,
-		MaxOutgoingCltvExpiry:   p.cfg.MaxOutgoingCltvExpiry,
-		MaxFeeAllocation:        p.cfg.MaxChannelFeeAllocation,
-		MaxAnchorsCommitFeeRate: p.cfg.MaxAnchorsCommitFeeRate,
-		NotifyActiveLink:        p.cfg.ChannelNotifier.NotifyActiveLinkEvent,
-		NotifyActiveChannel:     p.cfg.ChannelNotifier.NotifyActiveChannelEvent,
-		NotifyInactiveChannel:   p.cfg.ChannelNotifier.NotifyInactiveChannelEvent,
-		NotifyInactiveLinkEvent: p.cfg.ChannelNotifier.NotifyInactiveLinkEvent,
-		HtlcNotifier:            p.cfg.HtlcNotifier,
-		GetAliases:              p.cfg.GetAliases,
-		PreviouslySentShutdown:  shutdownMsg,
-		DisallowRouteBlinding:   p.cfg.DisallowRouteBlinding,
+		BatchSize:                      p.cfg.ChannelCommitBatchSize,
+		UnsafeReplay:                   p.cfg.UnsafeReplay,
+		MinFeeUpdateTimeout:            htlcswitch.DefaultMinLinkFeeUpdateTimeout,
+		MaxFeeUpdateTimeout:            htlcswitch.DefaultMaxLinkFeeUpdateTimeout,
+		OutgoingCltvRejectDelta:        p.cfg.OutgoingCltvRejectDelta,
+		TowerClient:                    p.cfg.TowerClient,
+		MaxOutgoingCltvExpiry:          p.cfg.MaxOutgoingCltvExpiry,
+		MaxFeeAllocation:               p.cfg.MaxChannelFeeAllocation,
+		MaxAnchorsCommitFeeRate:        p.cfg.MaxAnchorsCommitFeeRate,
+		NotifyActiveLink:               p.cfg.ChannelNotifier.NotifyActiveLinkEvent,
+		NotifyActiveChannel:            p.cfg.ChannelNotifier.NotifyActiveChannelEvent,
+		NotifyInactiveChannel:          p.cfg.ChannelNotifier.NotifyInactiveChannelEvent,
+		NotifyInactiveLinkEvent:        p.cfg.ChannelNotifier.NotifyInactiveLinkEvent,
+		HtlcNotifier:                   p.cfg.HtlcNotifier,
+		GetAliases:                     p.cfg.GetAliases,
+		PreviouslySentShutdown:         shutdownMsg,
+		DisallowRouteBlinding:          p.cfg.DisallowRouteBlinding,
+		ForwardExperimentalEndorsement: p.cfg.ForwardExperimentalEndorsement,
 	}
 
 	// Before adding our new link, purge the switch of any pending or live

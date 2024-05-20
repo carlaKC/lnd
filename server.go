@@ -129,6 +129,12 @@ var (
 	//
 	// TODO(roasbeef): add command line param to modify.
 	MaxFundingAmount = funding.MaxBtcFundingAmount
+
+	// EndorsementExperimentEnd is the time after which nodes should stop
+	// propagating experimental endorsement signals.
+	EndorsementExperimentEnd = time.Date(
+		2027, time.January, 1, 0, 0, 0, 0, time.UTC,
+	)
 )
 
 // errPeerAlreadyConnected is an error returned by the server when we're
@@ -3921,8 +3927,13 @@ func (s *server) peerConnected(conn net.Conn, connReq *connmgr.ConnReq,
 		RequestAlias:           s.aliasMgr.RequestAlias,
 		AddLocalAlias:          s.aliasMgr.AddLocalAlias,
 		DisallowRouteBlinding:  s.cfg.ProtocolOptions.NoRouteBlinding(),
-		Quit:                   s.quit,
-		AuxLeafStore:           s.implCfg.AuxLeafStore,
+		ForwardExperimentalEndorsement: func() bool {
+			return clock.NewDefaultClock().Now().Before(
+				EndorsementExperimentEnd,
+			)
+		},
+		Quit:         s.quit,
+		AuxLeafStore: s.implCfg.AuxLeafStore,
 	}
 
 	copy(pCfg.PubKeyBytes[:], peerAddr.IdentityKey.SerializeCompressed())
