@@ -257,6 +257,14 @@ const (
 	// finalized.
 	SimpleTaprootChannelsOptionalStaging = 181
 
+	// ExperimentalEndorsementRequired is a required feature bit that
+	// indicates that the node will relay experimental endorsement signals.
+	ExperimentalEndorsementRequired FeatureBit = 258
+
+	// ExperimentalEndorsementOptional is an optional feature bit that
+	// indicates that the node will relay experimental endorsement signals.
+	ExperimentalEndorsementOptional FeatureBit = 259
+
 	// MaxBolt11Feature is the maximum feature bit value allowed in bolt 11
 	// invoices.
 	//
@@ -321,6 +329,8 @@ var Features = map[FeatureBit]string{
 	SimpleTaprootChannelsOptionalFinal:   "simple-taproot-chans",
 	SimpleTaprootChannelsRequiredStaging: "simple-taproot-chans-x",
 	SimpleTaprootChannelsOptionalStaging: "simple-taproot-chans-x",
+	ExperimentalEndorsementRequired:      "endorsement-x",
+	ExperimentalEndorsementOptional:      "endorsement-x",
 }
 
 // RawFeatureVector represents a set of feature bits as defined in BOLT-09.  A

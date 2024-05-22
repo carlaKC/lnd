@@ -60,6 +60,10 @@ type Config struct {
 	// segwit witness versions for co-op closes.
 	NoAnySegwit bool
 
+	// NoExperimentalEndorsement unsets any bits that signal support for
+	// forwarding experimental endorsement.
+	NoExperimentalEndorsement bool
+
 	// CustomFeatures is a set of custom features to advertise in each
 	// set.
 	CustomFeatures map[Set][]lnwire.FeatureBit
@@ -178,6 +182,10 @@ func newManager(cfg Config, desc setDesc) (*Manager, error) {
 		if cfg.NoTaprootChans {
 			raw.Unset(lnwire.SimpleTaprootChannelsOptionalStaging)
 			raw.Unset(lnwire.SimpleTaprootChannelsRequiredStaging)
+		}
+		if cfg.NoExperimentalEndorsement {
+			raw.Unset(lnwire.ExperimentalEndorsementOptional)
+			raw.Unset(lnwire.ExperimentalEndorsementRequired)
 		}
 
 		for _, custom := range cfg.CustomFeatures[set] {
