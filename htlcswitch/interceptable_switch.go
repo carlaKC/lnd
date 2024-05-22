@@ -633,7 +633,7 @@ func (f *interceptedForward) Packet() InterceptedPacket {
 		OnionBlob:      f.htlc.OnionBlob,
 		AutoFailHeight: f.autoFailHeight,
 		IncomingWireCustomRecords: record.CustomSet(
-			f.htlc.CustomRecords,
+			f.packet.incomingCustomRecords,
 		),
 	}
 }

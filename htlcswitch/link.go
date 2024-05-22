@@ -29,6 +29,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/queue"
+	"github.com/lightningnetwork/lnd/record"
 	"github.com/lightningnetwork/lnd/ticker"
 	"github.com/lightningnetwork/lnd/tlv"
 )
@@ -3355,6 +3356,29 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				continue
 			}
 
+			var incomingCustom record.CustomSet
+			err = fn.MapOptionZ(
+				pd.CustomRecords,
+				func(b tlv.Blob) error {
+					f := lnwire.ParseCustomRecords
+					r, err := f(b)
+					if err != nil {
+						return err
+					}
+
+					incomingCustom = record.CustomSet(r)
+
+					return nil
+				},
+			)
+			if err != nil {
+				l.fail(LinkFailureError{
+					code: ErrInternalError,
+				}, err.Error())
+
+				return
+			}
+
 			switch fwdPkg.State {
 			case channeldb.FwdStateProcessed:
 				// This add was not forwarded on the previous
@@ -3376,28 +3400,6 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 					BlindingPoint: fwdInfo.NextBlinding,
 				}
 
-				err = fn.MapOptionZ(
-					pd.CustomRecords,
-					func(b tlv.Blob) error {
-						f := lnwire.ParseCustomRecords
-						r, err := f(b)
-						if err != nil {
-							return err
-						}
-
-						addMsg.CustomRecords = r
-
-						return nil
-					},
-				)
-				if err != nil {
-					l.fail(LinkFailureError{
-						code: ErrInternalError,
-					}, err.Error())
-
-					return
-				}
-
 				// Finally, we'll encode the onion packet for
 				// the _next_ hop using the hop iterator
 				// decoded for the current hop.
@@ -3411,19 +3413,21 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				inboundFee := l.cfg.FwrdingPolicy.InboundFee
 
 				updatePacket := &htlcPacket{
-					incomingChanID:  l.ShortChanID(),
-					incomingHTLCID:  pd.HtlcIndex,
-					outgoingChanID:  fwdInfo.NextHop,
-					sourceRef:       pd.SourceRef,
-					incomingAmount:  pd.Amount,
-					amount:          addMsg.Amount,
-					htlc:            addMsg,
-					obfuscator:      obfuscator,
-					incomingTimeout: pd.Timeout,
-					outgoingTimeout: fwdInfo.OutgoingCTLV,
-					customRecords:   pld.CustomRecords(),
-					inboundFee:      inboundFee,
+					incomingChanID:        l.ShortChanID(),
+					incomingHTLCID:        pd.HtlcIndex,
+					outgoingChanID:        fwdInfo.NextHop,
+					sourceRef:             pd.SourceRef,
+					incomingAmount:        pd.Amount,
+					amount:                addMsg.Amount,
+					htlc:                  addMsg,
+					obfuscator:            obfuscator,
+					incomingTimeout:       pd.Timeout,
+					outgoingTimeout:       fwdInfo.OutgoingCTLV,
+					customRecords:         pld.CustomRecords(),
+					incomingCustomRecords: incomingCustom,
+					inboundFee:            inboundFee,
 				}
+
 				switchPackets = append(
 					switchPackets, updatePacket,
 				)
@@ -3442,26 +3446,6 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				Amount:        fwdInfo.AmountToForward,
 				PaymentHash:   pd.RHash,
 				BlindingPoint: fwdInfo.NextBlinding,
-			}
-
-			err = fn.MapOptionZ(
-				pd.CustomRecords, func(b tlv.Blob) error {
-					r, err := lnwire.ParseCustomRecords(b)
-					if err != nil {
-						return err
-					}
-
-					addMsg.CustomRecords = r
-
-					return nil
-				},
-			)
-			if err != nil {
-				l.fail(LinkFailureError{
-					code: ErrInternalError,
-				}, err.Error())
-
-				return
 			}
 
 			// Finally, we'll encode the onion packet for the
@@ -3499,18 +3483,40 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg,
 				inboundFee := l.cfg.FwrdingPolicy.InboundFee
 
 				updatePacket := &htlcPacket{
-					incomingChanID:  l.ShortChanID(),
-					incomingHTLCID:  pd.HtlcIndex,
-					outgoingChanID:  fwdInfo.NextHop,
-					sourceRef:       pd.SourceRef,
-					incomingAmount:  pd.Amount,
-					amount:          addMsg.Amount,
-					htlc:            addMsg,
-					obfuscator:      obfuscator,
-					incomingTimeout: pd.Timeout,
-					outgoingTimeout: fwdInfo.OutgoingCTLV,
-					customRecords:   pld.CustomRecords(),
-					inboundFee:      inboundFee,
+					incomingChanID:        l.ShortChanID(),
+					incomingHTLCID:        pd.HtlcIndex,
+					outgoingChanID:        fwdInfo.NextHop,
+					sourceRef:             pd.SourceRef,
+					incomingAmount:        pd.Amount,
+					amount:                addMsg.Amount,
+					htlc:                  addMsg,
+					obfuscator:            obfuscator,
+					incomingTimeout:       pd.Timeout,
+					outgoingTimeout:       fwdInfo.OutgoingCTLV,
+					customRecords:         pld.CustomRecords(),
+					incomingCustomRecords: incomingCustom,
+					inboundFee:            inboundFee,
+				}
+
+				err = fn.MapOptionZ(
+					pd.CustomRecords, func(b tlv.Blob) error {
+						r, err := lnwire.ParseCustomRecords(b)
+						if err != nil {
+							return err
+						}
+
+						//nolint:lll
+						updatePacket.incomingCustomRecords = record.CustomSet(r)
+
+						return nil
+					},
+				)
+				if err != nil {
+					l.fail(LinkFailureError{
+						code: ErrInternalError,
+					}, err.Error())
+
+					return
 				}
 
 				fwdPkg.FwdFilter.Set(idx)
