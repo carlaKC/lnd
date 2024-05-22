@@ -96,7 +96,9 @@ var defaultSetDesc = setDesc{
 		SetInvoice: {}, // I
 	},
 	lnwire.SimpleTaprootOverlayChansOptional: {
-		SetInit:    {}, // I
+		SetInit: {}, // I
+	},
+	lnwire.ExperimentalEndorsementOptional: {
 		SetNodeAnn: {}, // N
 	},
 }
