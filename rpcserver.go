@@ -752,8 +752,9 @@ func (r *rpcServer) addDeps(s *server, macService *macaroons.Service,
 		SetChannelDisabled: func(outpoint wire.OutPoint) error {
 			return s.chanStatusMgr.RequestDisable(outpoint, true)
 		},
-		SetChannelAuto:     s.chanStatusMgr.RequestAuto,
-		UseStatusInitiated: subServerCgs.RouterRPC.UseStatusInitiated,
+		SetChannelAuto:             s.chanStatusMgr.RequestAuto,
+		UseStatusInitiated:         subServerCgs.RouterRPC.UseStatusInitiated,
+		SetExperimentalEndorsement: true,
 	}
 
 	genInvoiceFeatures := func() *lnwire.FeatureVector {
