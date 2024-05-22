@@ -872,6 +872,13 @@ func (r *RouterBackend) extractIntentFromSendRequest(
 	// a zero value field if configured to set this signal.
 	if r.SetExperimentalEndorsement() {
 		var t uint64 = lnwire.ExperimentalEndorsementType
+
+		if payIntent.FirstHopCustomRecords == nil {
+			payIntent.FirstHopCustomRecords = make(
+				map[uint64][]byte,
+			)
+		}
+
 		if _, set := payIntent.FirstHopCustomRecords[t]; !set {
 			payIntent.FirstHopCustomRecords[t] = []byte{0}
 		}
