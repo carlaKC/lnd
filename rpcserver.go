@@ -733,6 +733,10 @@ func (r *rpcServer) addDeps(s *server, macService *macaroons.Service,
 		SetChannelAuto:     s.chanStatusMgr.RequestAuto,
 		UseStatusInitiated: subServerCgs.RouterRPC.UseStatusInitiated,
 		ShouldSetExperimentalEndorsement: func() bool {
+			if s.cfg.ProtocolOptions.NoExperimentalEndorsement() {
+				return false
+			}
+
 			return clock.NewDefaultClock().Now().Before(
 				EndorsementExperimentEnd,
 			)
