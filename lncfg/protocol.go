@@ -57,6 +57,9 @@ type ProtocolOptions struct {
 
 	// NoRouteBlindingOption disables forwarding of payments in blinded routes.
 	NoRouteBlindingOption bool `long:"no-route-blinding" description:"do not forward payments that are a part of a blinded route"`
+
+	// NoExperimentalEndorsementOption disables experimental endorsement.
+	NoExperimentalEndorsementOption bool `long:"no-experimental-endorsement" description:"do not forward experimental endorsement signals"`
 }
 
 // DefaultProtocol returns a protocol config with route blinding turned off,
@@ -112,4 +115,10 @@ func (l *ProtocolOptions) NoTimestampsQuery() bool {
 // NoRouteBlinding returns true if forwarding of blinded payments is disabled.
 func (l *ProtocolOptions) NoRouteBlinding() bool {
 	return l.NoRouteBlindingOption
+}
+
+// NoExperimentalEndorsement returns true if experimental endorsement should
+// be disabled.
+func (l *ProtocolOptions) NoExperimentalEndorsement() bool {
+	return l.NoExperimentalEndorsementOption
 }
