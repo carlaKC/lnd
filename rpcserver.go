@@ -690,6 +690,7 @@ func (r *rpcServer) addDeps(s *server, macService *macaroons.Service,
 	}
 	graph := s.graphDB
 
+	//nolint:lll
 	routerBackend := &routerrpc.RouterBackend{
 		SelfNode: selfNode.PubKeyBytes,
 		FetchChannelCapacity: func(chanID uint64) (btcutil.Amount,
@@ -754,7 +755,7 @@ func (r *rpcServer) addDeps(s *server, macService *macaroons.Service,
 		},
 		SetChannelAuto:             s.chanStatusMgr.RequestAuto,
 		UseStatusInitiated:         subServerCgs.RouterRPC.UseStatusInitiated,
-		SetExperimentalEndorsement: true,
+		SetExperimentalEndorsement: !s.cfg.ProtocolOptions.NoExperimentalEndorsement(),
 	}
 
 	genInvoiceFeatures := func() *lnwire.FeatureVector {

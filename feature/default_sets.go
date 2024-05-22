@@ -92,4 +92,7 @@ var defaultSetDesc = setDesc{
 		SetInit:    {}, // I
 		SetNodeAnn: {}, // N
 	},
+	lnwire.ExperimentalEndorsementOptional: {
+		SetNodeAnn: {}, // N
+	},
 }
