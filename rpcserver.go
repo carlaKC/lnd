@@ -44,6 +44,7 @@ import (
 	"github.com/lightningnetwork/lnd/channeldb/graphsession"
 	"github.com/lightningnetwork/lnd/channeldb/models"
 	"github.com/lightningnetwork/lnd/channelnotifier"
+	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/contractcourt"
 	"github.com/lightningnetwork/lnd/discovery"
 	"github.com/lightningnetwork/lnd/feature"
@@ -744,6 +745,11 @@ func (r *rpcServer) addDeps(s *server, macService *macaroons.Service,
 		},
 		SetChannelAuto:     s.chanStatusMgr.RequestAuto,
 		UseStatusInitiated: subServerCgs.RouterRPC.UseStatusInitiated,
+		ShouldSetExperimentalEndorsement: func() bool {
+			return clock.NewDefaultClock().Now().Before(
+				EndorsementExperimentEnd,
+			)
+		},
 	}
 
 	genInvoiceFeatures := func() *lnwire.FeatureVector {
