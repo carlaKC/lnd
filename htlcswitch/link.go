@@ -29,6 +29,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/queue"
+	"github.com/lightningnetwork/lnd/quiescence"
 	"github.com/lightningnetwork/lnd/ticker"
 )
 
@@ -382,7 +383,7 @@ type channelLink struct {
 
 	// quiescer is the state machine that tracks where this channel is with
 	// respect to the quiescence protocol.
-	quiescer
+	quiescer quiescence.QuiescenceMgr
 
 	// activeQuiescenceRequest is a possibly nil channel that we should
 	// send on when we complete quiescence. We close the channel (causing
@@ -463,12 +464,7 @@ func NewChannelLink(cfg ChannelLinkConfig,
 
 	logPrefix := fmt.Sprintf("ChannelLink(%v):", channel.ChannelPoint())
 
-	qsm := quiescer{
-		chanID:   lnwire.NewChanIDFromOutPoint(channel.ChannelPoint()),
-		weOpened: channel.IsInitiator(),
-	}
-
-	return &channelLink{
+	l := &channelLink{
 		cfg:                   cfg,
 		channel:               channel,
 		hodlMap:               make(map[models.CircuitKey]hodlHtlc),
@@ -477,10 +473,25 @@ func NewChannelLink(cfg ChannelLinkConfig,
 		flushHooks:            newHookMap(),
 		outgoingCommitHooks:   newHookMap(),
 		incomingCommitHooks:   newHookMap(),
-		quiescer:              qsm,
 		newQuiescenceRequests: make(chan chan<- fn.Option[bool], 1),
 		quit:                  make(chan struct{}),
 	}
+
+	l.quiescer = quiescence.NewQuiescer(
+		lnwire.NewChanIDFromOutPoint(channel.ChannelPoint()),
+		channel.IsInitiator(),
+		func(stfu lnwire.Stfu) error {
+			return l.cfg.Peer.SendMessage(false, &stfu)
+		},
+		func() bool {
+			localOnRemote := l.channel.NumLocalUpdatesPendingOnRemote()
+			localOnLocal := l.channel.NumLocalUpdatesPendingOnLocal()
+
+			return localOnRemote == 0 || localOnLocal == 0
+		},
+	)
+
+	return l
 }
 
 // A compile time check to ensure channelLink implements the ChannelLink
@@ -641,7 +652,7 @@ func (l *channelLink) EligibleToUpdate() bool {
 	return l.channel.RemoteNextRevocation() != nil &&
 		l.ShortChanID() != hop.Source &&
 		l.isReestablished() &&
-		l.quiescer.canSendUpdates()
+		l.quiescer.CanSendUpdates()
 }
 
 // EnableAdds sets the ChannelUpdateHandler state to allow UpdateAddHtlc's in
@@ -1478,13 +1489,10 @@ func (l *channelLink) htlcManager() {
 				)
 			}
 		case qReq := <-l.newQuiescenceRequests:
-			l.activeQuiescenceRequest = qReq
-			err := l.quiescer.initStfu()
+			err := l.quiescer.InitStfu(qReq)
 			if err != nil {
-				close(qReq)
 				l.log.Errorf("%v", err)
 			}
-			l.drivePendingStfuSends()
 
 		case <-l.quit:
 			return
@@ -1630,7 +1638,7 @@ func (l *channelLink) handleDownstreamUpdateAdd(pkt *htlcPacket) error {
 
 	// If the channel is quiescent then we issue a temporary channel failure
 	// and bounce it.
-	if !l.quiescer.canSendUpdates() {
+	if !l.quiescer.CanSendUpdates() {
 		l.mailBox.FailAdd(pkt)
 
 		return NewDetailedLinkError(
@@ -1730,9 +1738,9 @@ func (l *channelLink) handleDownstreamPkt(pkt *htlcPacket) {
 		_ = l.handleDownstreamUpdateAdd(pkt)
 
 	case *lnwire.UpdateFulfillHTLC:
-		if !l.quiescer.canSendUpdates() {
+		if !l.quiescer.CanSendUpdates() {
 			l.log.Warn("unable to process channel update. "+
-				"ChannelID=%v is quiescent.", l.chanID)
+				"ChannelID=%v is quiescent.", l.ChanID)
 
 			return
 		}
@@ -1803,9 +1811,9 @@ func (l *channelLink) handleDownstreamPkt(pkt *htlcPacket) {
 		l.updateCommitTxOrFail()
 
 	case *lnwire.UpdateFailHTLC:
-		if !l.quiescer.canSendUpdates() {
+		if !l.quiescer.CanSendUpdates() {
 			l.log.Warn("unable to process channel update. "+
-				"ChannelID=%v is quiescent.", l.chanID)
+				"ChannelID=%v is quiescent.", l.ChanID)
 
 			return
 		}
@@ -2015,7 +2023,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			return
 		}
 
-		if !l.quiescer.canRecvUpdates() {
+		if !l.quiescer.CanRecvUpdates() {
 			l.stfuFailf("update received after stfu")
 			return
 		}
@@ -2047,7 +2055,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			"assigning index: %v", msg.PaymentHash[:], index)
 
 	case *lnwire.UpdateFulfillHTLC:
-		if !l.quiescer.canRecvUpdates() {
+		if !l.quiescer.CanRecvUpdates() {
 			l.stfuFailf("update received after stfu")
 			return
 		}
@@ -2105,7 +2113,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		go l.forwardBatch(false, settlePacket)
 
 	case *lnwire.UpdateFailMalformedHTLC:
-		if !l.quiescer.canRecvUpdates() {
+		if !l.quiescer.CanRecvUpdates() {
 			l.stfuFailf("update received after stfu")
 			return
 		}
@@ -2177,7 +2185,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		}
 
 	case *lnwire.UpdateFailHTLC:
-		if !l.quiescer.canRecvUpdates() {
+		if !l.quiescer.CanRecvUpdates() {
 			l.stfuFailf("update received after stfu")
 			return
 		}
@@ -2366,9 +2374,10 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			}
 		}
 
-		// If we need to send out an Stfu, this would be the time to do
-		// so.
-		l.drivePendingStfuSends()
+		// Now that we've updated our state, it's possible that we
+		// could be in the position to progress our quiescence state,
+		// so we try here.
+		l.quiescer.TryProgressState()
 
 		// Now that we have finished processing the incoming CommitSig
 		// and sent out our RevokeAndAck, we invoke the flushHooks if
@@ -2445,10 +2454,10 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		// We are free to process the settles and fails without this
 		// check since processing those can't result in further updates
 		// to this channel link.
-		if l.quiescer.canSendUpdates() {
+		if l.quiescer.CanSendUpdates() {
 			l.processRemoteAdds(fwdPkg, adds)
 		} else {
-			l.quiescer.onResume(func() {
+			l.quiescer.RegisterHook(func() {
 				l.processRemoteAdds(fwdPkg, adds)
 			})
 		}
@@ -2483,7 +2492,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		l.RWMutex.Unlock()
 
 	case *lnwire.UpdateFee:
-		if !l.quiescer.canRecvUpdates() {
+		if !l.quiescer.CanRecvUpdates() {
 			l.stfuFailf("update received after stfu")
 			return
 		}
@@ -2522,15 +2531,10 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			return
 		}
 
-		err := l.quiescer.recvStfu(*msg)
+		err := l.quiescer.RecvStfu(*msg)
 		if err != nil {
-			handleErr(err)
-			return
+			l.stfuFailf("receive stfu: %v", err.Error())
 		}
-		l.tryResolveQuiescenceRequests()
-
-		// If we can immediately send an Stfu response back , we will.
-		l.drivePendingStfuSends()
 
 	// In the case where we receive a warning message from our peer, just
 	// log it and move on. We choose not to disconnect from our peer,
@@ -2562,59 +2566,6 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		l.log.Warnf("received unknown message of type %T", msg)
 	}
 
-}
-
-// drivePendingStfuSends checks to see if we owe any Stfu messages to our peer.
-// If we do then we will send them and record that send. We can owe our peer an
-// Stfu either if we have a pending request to quiesce the channel or our peer
-// has sent us an Stfu to which we haven't yet responded.
-func (l *channelLink) drivePendingStfuSends() {
-	if !l.quiescer.oweStfu() {
-		return
-	}
-
-	l.log.Debug("stfu owed")
-
-	handleErr := func(err error) {
-		l.log.Error(err.Error())
-		l.stfuFailf(err.Error())
-	}
-
-	localOnRemote := l.channel.NumLocalUpdatesPendingOnRemote()
-	localOnLocal := l.channel.NumLocalUpdatesPendingOnLocal()
-	if localOnRemote == 0 && localOnLocal == 0 {
-		l.log.Debug("all local updates synced, sending stfu")
-		oStfu, err := l.quiescer.sendStfu()
-		if err != nil {
-			handleErr(err)
-			return
-		}
-		oStfu.WhenSome(func(stfu lnwire.Stfu) {
-			err := l.cfg.Peer.SendMessage(false, &stfu)
-			if err != nil {
-				handleErr(err)
-				return
-			}
-			l.tryResolveQuiescenceRequests()
-		})
-	}
-}
-
-// tryResolveQuiescenceRequests checks whether the quiescence protocol has
-// successfully completed. If it has, it completes the outstanding asynchronous
-// request, if there is one.
-func (l *channelLink) tryResolveQuiescenceRequests() {
-	if l.quiescer.isQuiescent() {
-		if resp := l.activeQuiescenceRequest; resp != nil {
-			ourTurn := l.quiescer.isLocallyInitiatedFinal()
-			ourTurn.WhenSome(func(ourTurn bool) {
-				select {
-				case resp <- fn.Some(ourTurn):
-				case <-l.quit:
-				}
-			})
-		}
-	}
 }
 
 // stfuFailf fails the link in the case where the requirements of the quiescence
