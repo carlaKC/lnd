@@ -485,3 +485,14 @@ func (*MockAuxSigner) VerifySecondLevelSigs(_ *channeldb.OpenChannel,
 
 	return nil
 }
+
+type MockAuxContractResolver struct{}
+
+// ResolveContract is called to resolve a contract that needs
+// additional information to resolve properly. If no extra information
+// is required, a nil Result error is returned.
+func (*MockAuxContractResolver) ResolveContract(
+	ResolutionReq) fn.Result[tlv.Blob] {
+
+	return fn.Ok[tlv.Blob](nil)
+}
