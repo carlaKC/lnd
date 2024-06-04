@@ -150,6 +150,7 @@ func TestNeedWalletInput(t *testing.T) {
 	testCases := []struct {
 		name        string
 		setupInputs func() []*SweeperInput
+		extraBudget btcutil.Amount
 		need        bool
 	}{
 		{
@@ -180,6 +181,27 @@ func TestNeedWalletInput(t *testing.T) {
 				return []*SweeperInput{piBudget}
 			},
 			need: false,
+		},
+		{
+			// When there's no required normal outputs, but an extra
+			// budget from custom channels, we will need a wallet
+			// input.
+			name: "no required normal outputs but extra budget",
+			setupInputs: func() []*SweeperInput {
+				// Create a sign descriptor to be used in the
+				// pending input when calculating budgets can
+				// be borrowed.
+				sd := &input.SignDescriptor{
+					Output: &wire.TxOut{
+						Value: budget,
+					},
+				}
+				mockInput.On("SignDesc").Return(sd).Once()
+
+				return []*SweeperInput{piBudget}
+			},
+			extraBudget: 1000,
+			need:        true,
 		},
 		{
 			// When the output value cannot cover the budget, we
@@ -280,7 +302,7 @@ func TestNeedWalletInput(t *testing.T) {
 			// inputs.
 			set := &BudgetInputSet{inputs: inputs}
 
-			result := set.NeedWalletInput()
+			result := set.NeedWalletInput(tc.extraBudget)
 			require.Equal(t, tc.need, result)
 		})
 	}
@@ -311,7 +333,7 @@ func TestAddWalletInputReturnErr(t *testing.T) {
 
 	// Check that the error is returned from
 	// ListUnspentWitnessFromDefaultAccount.
-	err := set.AddWalletInputs(wallet)
+	err := set.AddWalletInputs(wallet, 0)
 	require.ErrorIs(t, err, dummyErr)
 
 	// Create an utxo with unknown address type to trigger an error.
@@ -324,7 +346,7 @@ func TestAddWalletInputReturnErr(t *testing.T) {
 		min, max).Return([]*lnwallet.Utxo{utxo}, nil).Once()
 
 	// Check that the error is returned from createWalletTxInput.
-	err = set.AddWalletInputs(wallet)
+	err = set.AddWalletInputs(wallet, 0)
 	require.Error(t, err)
 
 	// Mock the wallet to return empty utxos.
@@ -332,7 +354,7 @@ func TestAddWalletInputReturnErr(t *testing.T) {
 		min, max).Return([]*lnwallet.Utxo{}, nil).Once()
 
 	// Check that the error is returned from not having wallet inputs.
-	err = set.AddWalletInputs(wallet)
+	err = set.AddWalletInputs(wallet, 0)
 	require.ErrorIs(t, err, ErrNotEnoughInputs)
 }
 
@@ -378,7 +400,7 @@ func TestAddWalletInputNotEnoughInputs(t *testing.T) {
 
 	// Add wallet inputs to the input set, which should give us an error as
 	// the wallet cannot cover the budget.
-	err := set.AddWalletInputs(wallet)
+	err := set.AddWalletInputs(wallet, 0)
 	require.ErrorIs(t, err, ErrNotEnoughInputs)
 
 	// Check that the budget set is reverted to its initial state.
@@ -439,7 +461,7 @@ func TestAddWalletInputSuccess(t *testing.T) {
 
 	// Add wallet inputs to the input set, which should give us an error as
 	// the wallet cannot cover the budget.
-	err = set.AddWalletInputs(wallet)
+	err = set.AddWalletInputs(wallet, 0)
 	require.NoError(t, err)
 
 	// Check that the budget set is updated.

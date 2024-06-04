@@ -362,6 +362,10 @@ type UtxoSweeperConfig struct {
 	// NoDeadlineConfTarget is the conf target to use when sweeping
 	// non-time-sensitive outputs.
 	NoDeadlineConfTarget uint32
+
+	// AuxSweeper is an optional interface that can be used to modify the
+	// way sweep transaction are generated.
+	AuxSweeper fn.Option[AuxSweeper]
 }
 
 // Result is the struct that is pushed through the result channel. Callers can
@@ -1547,8 +1551,21 @@ func (s *UtxoSweeper) sweepPendingInputs(inputs InputsMap) {
 	// transactions like funding of a channel.
 	sweepWithLock := func(set InputSet) error {
 		return s.cfg.Wallet.WithCoinSelectLock(func() error {
+			extraBudgetRes := fn.MapOptionZ(
+				s.cfg.AuxSweeper,
+				func(s AuxSweeper) fn.Result[btcutil.Amount] {
+					return s.ExtraBudgetForInputs(
+						set.Inputs(),
+					)
+				},
+			)
+			extraBudget, err := extraBudgetRes.Unpack()
+			if err != nil {
+				return err
+			}
+
 			// Try to add inputs from our wallet.
-			err := set.AddWalletInputs(s.cfg.Wallet)
+			err = set.AddWalletInputs(s.cfg.Wallet, extraBudget)
 			if err != nil {
 				return err
 			}
@@ -1564,8 +1581,21 @@ func (s *UtxoSweeper) sweepPendingInputs(inputs InputsMap) {
 	}
 
 	for _, set := range sets {
-		var err error
-		if set.NeedWalletInput() {
+		extraBudgetRes := fn.MapOptionZ(
+			s.cfg.AuxSweeper,
+			func(s AuxSweeper) fn.Result[btcutil.Amount] {
+				return s.ExtraBudgetForInputs(
+					set.Inputs(),
+				)
+			},
+		)
+		extraBudget, err := extraBudgetRes.Unpack()
+		if err != nil {
+			log.Errorf("Failed to get extra budget for set %v: %v",
+				set, err)
+		}
+
+		if set.NeedWalletInput(extraBudget) {
 			// Sweep the set of inputs that need the wallet inputs.
 			err = sweepWithLock(set)
 		} else {

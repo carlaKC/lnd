@@ -37,11 +37,11 @@ type InputSet interface {
 	// AddWalletInputs adds wallet inputs to the set until a non-dust
 	// change output can be made. Return an error if there are not enough
 	// wallet inputs.
-	AddWalletInputs(wallet Wallet) error
+	AddWalletInputs(wallet Wallet, extraBudget btcutil.Amount) error
 
 	// NeedWalletInput returns true if the input set needs more wallet
 	// inputs.
-	NeedWalletInput() bool
+	NeedWalletInput(extraBudget btcutil.Amount) bool
 
 	// DeadlineHeight returns an absolute block height to express the
 	// time-sensitivity of the input set. The outputs from a force close tx
@@ -209,11 +209,13 @@ func (b *BudgetInputSet) addInput(input SweeperInput) {
 //
 // A set may need wallet inputs when it has a required output or its total
 // value cannot cover its total budget.
-func (b *BudgetInputSet) NeedWalletInput() bool {
+func (b *BudgetInputSet) NeedWalletInput(extraBudget btcutil.Amount) bool {
 	var (
 		// budgetNeeded is the amount that needs to be covered from
-		// other inputs.
-		budgetNeeded btcutil.Amount
+		// other inputs. We start at the value of the extra budget,
+		// which might be needed for custom channels that add extra
+		// outputs.
+		budgetNeeded = extraBudget
 
 		// budgetBorrowable is the amount that can be borrowed from
 		// other inputs.
@@ -274,7 +276,9 @@ func (b *BudgetInputSet) copyInputs() []*SweeperInput {
 // set to its initial state by removing any wallet inputs added.
 //
 // NOTE: must be called with the wallet lock held via `WithCoinSelectLock`.
-func (b *BudgetInputSet) AddWalletInputs(wallet Wallet) error {
+func (b *BudgetInputSet) AddWalletInputs(wallet Wallet,
+	extraBudget btcutil.Amount) error {
+
 	// Retrieve wallet utxos. Only consider confirmed utxos to prevent
 	// problems around RBF rules for unconfirmed inputs. This currently
 	// ignores the configured coin selection strategy.
@@ -318,7 +322,7 @@ func (b *BudgetInputSet) AddWalletInputs(wallet Wallet) error {
 			pi.OutPoint(), utxo.Value)
 
 		// Return if we've reached the minimum output amount.
-		if !b.NeedWalletInput() {
+		if !b.NeedWalletInput(extraBudget) {
 			return nil
 		}
 	}
