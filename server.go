@@ -4931,12 +4931,7 @@ func newSweepPkScriptGen(
 
 		return fn.Ok(lnwallet.AddrWithKey{
 			DeliveryAddress: addr,
-			InternalKey: fn.MapOption(func(
-				desc keychain.KeyDescriptor) btcec.PublicKey {
-
-				return *desc.PubKey
-			},
-			)(internalKeyDesc),
+			InternalKey:     internalKeyDesc,
 		})
 	}
 }
