@@ -1183,6 +1183,7 @@ func newServer(cfg *Config, listenAddrs []net.Addr,
 			Store: contractcourt.NewRetributionStore(
 				dbs.ChanStateDB,
 			),
+			AuxSweeper: s.implCfg.AuxSweeper,
 		},
 	)
 
