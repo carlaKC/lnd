@@ -56,17 +56,18 @@ var (
 	// operations.
 	byteOrder = binary.BigEndian
 
-	// startBlockHeight is the starting block height of the alias range.
-	startingBlockHeight = 16_000_000
+	// AliasStartBlockHeight is the starting block height of the alias
+	// range.
+	AliasStartBlockHeight = 16_000_000
 
-	// endBlockHeight is the ending block height of the alias range.
-	endBlockHeight = 16_250_000
+	// AliasEndBlockHeight is the ending block height of the alias range.
+	AliasEndBlockHeight = 16_250_000
 
 	// StartingAlias is the first alias ShortChannelID that will get
 	// assigned by RequestAlias. The starting BlockHeight is chosen so that
 	// legitimate SCIDs in integration tests aren't mistaken for an alias.
 	StartingAlias = lnwire.ShortChannelID{
-		BlockHeight: uint32(startingBlockHeight),
+		BlockHeight: uint32(AliasStartBlockHeight),
 		TxIndex:     0,
 		TxPosition:  0,
 	}
@@ -654,10 +655,10 @@ func getNextScid(last lnwire.ShortChannelID) lnwire.ShortChannelID {
 
 // IsAlias returns true if the passed SCID is an alias. The function determines
 // this by looking at the BlockHeight. If the BlockHeight is greater than
-// startingBlockHeight and less than endBlockHeight, then it is an alias
+// AliasStartBlockHeight and less than AliasEndBlockHeight, then it is an alias
 // assigned by RequestAlias. These bounds only apply to aliases we generate.
 // Our peers are free to use any range they choose.
 func IsAlias(scid lnwire.ShortChannelID) bool {
-	return scid.BlockHeight >= uint32(startingBlockHeight) &&
-		scid.BlockHeight < uint32(endBlockHeight)
+	return scid.BlockHeight >= uint32(AliasStartBlockHeight) &&
+		scid.BlockHeight < uint32(AliasEndBlockHeight)
 }
