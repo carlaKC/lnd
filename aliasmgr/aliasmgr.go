@@ -58,16 +58,16 @@ var (
 	byteOrder = binary.BigEndian
 
 	// startBlockHeight is the starting block height of the alias range.
-	startingBlockHeight = 16_000_000
+	startingBlockHeight uint32 = 16_000_000
 
 	// endBlockHeight is the ending block height of the alias range.
-	endBlockHeight = 16_250_000
+	endBlockHeight uint32 = 16_250_000
 
 	// StartingAlias is the first alias ShortChannelID that will get
 	// assigned by RequestAlias. The starting BlockHeight is chosen so that
 	// legitimate SCIDs in integration tests aren't mistaken for an alias.
 	StartingAlias = lnwire.ShortChannelID{
-		BlockHeight: uint32(startingBlockHeight),
+		BlockHeight: startingBlockHeight,
 		TxIndex:     0,
 		TxPosition:  0,
 	}
@@ -506,6 +506,23 @@ func (m *Manager) GetPeerAlias(chanID lnwire.ChannelID) (lnwire.ShortChannelID,
 func (m *Manager) RequestAlias() (lnwire.ShortChannelID, error) {
 	var nextAlias lnwire.ShortChannelID
 
+	m.RLock()
+	defer m.RUnlock()
+
+	// haveAlias returns true if the passed alias is already assigned to a
+	// channel in the baseToSet map.
+	haveAlias := func(maybeNextAlias lnwire.ShortChannelID) bool {
+		for _, aliasList := range m.baseToSet {
+			for _, alias := range aliasList {
+				if alias == maybeNextAlias {
+					return true
+				}
+			}
+		}
+
+		return false
+	}
+
 	err := kvdb.Update(m.backend, func(tx kvdb.RwTx) error {
 		bucket, err := tx.CreateTopLevelBucket(aliasAllocBucket)
 		if err != nil {
@@ -517,6 +534,27 @@ func (m *Manager) RequestAlias() (lnwire.ShortChannelID, error) {
 			// If the key does not exist, then we can write the
 			// StartingAlias to it.
 			nextAlias = StartingAlias
+
+			// If the very first alias is already assigned, we'll
+			// keep incrementing until we find an unassigned alias.
+			// This is to avoid collision with custom added SCID
+			// aliases that fall into the same range as the ones we
+			// generate here monotonically. Those custom SCIDs are
+			// stored in a different bucket, but we can just check
+			// the in-memory map for simplicity.
+			for {
+				if !haveAlias(nextAlias) {
+					break
+				}
+
+				nextAlias = getNextScid(nextAlias)
+
+				// Abort if we've reached the end of the range.
+				if nextAlias.BlockHeight >= endBlockHeight {
+					return fmt.Errorf("range for custom " +
+						"aliases exhausted")
+				}
+			}
 
 			var scratch [8]byte
 			byteOrder.PutUint64(scratch[:], nextAlias.ToUint64())
@@ -531,6 +569,26 @@ func (m *Manager) RequestAlias() (lnwire.ShortChannelID, error) {
 			byteOrder.Uint64(lastBytes),
 		)
 		nextAlias = getNextScid(lastScid)
+
+		// If the next alias is already assigned, we'll keep
+		// incrementing until we find an unassigned alias. This is to
+		// avoid collision with custom added SCID aliases that fall into
+		// the same range as the ones we generate here monotonically.
+		// Those custom SCIDs are stored in a different bucket, but we
+		// can just check the in-memory map for simplicity.
+		for {
+			if !haveAlias(nextAlias) {
+				break
+			}
+
+			nextAlias = getNextScid(nextAlias)
+
+			// Abort if we've reached the end of the range.
+			if nextAlias.BlockHeight >= endBlockHeight {
+				return fmt.Errorf("range for custom " +
+					"aliases exhausted")
+			}
+		}
 
 		var scratch [8]byte
 		byteOrder.PutUint64(scratch[:], nextAlias.ToUint64())
@@ -614,6 +672,6 @@ func getNextScid(last lnwire.ShortChannelID) lnwire.ShortChannelID {
 // assigned by RequestAlias. These bounds only apply to aliases we generate.
 // Our peers are free to use any range they choose.
 func IsAlias(scid lnwire.ShortChannelID) bool {
-	return scid.BlockHeight >= uint32(startingBlockHeight) &&
-		scid.BlockHeight < uint32(endBlockHeight)
+	return scid.BlockHeight >= startingBlockHeight &&
+		scid.BlockHeight < endBlockHeight
 }
