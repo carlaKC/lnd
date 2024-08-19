@@ -765,12 +765,9 @@ func (r *RouterBackend) UnmarshallRoute(rpcroute *lnrpc.Route) (
 func extractHTLCEndorsement(request HTLCEndorsement) bool {
 	switch request {
 	case HTLCEndorsement_ENDORSEMENT_UNKNOWN:
-		// TODO: add coin flip to set endorsement with some probability
-		// P when the user has not explicitly requested an endorsement
-		// signal.
-		// Note: this is set to true for the purposes of simulation,
-		// it should to updated to flip a coin.
-		return true
+		// By default do not endorse payment if no explicit signal was
+		// not provided.
+		return false
 
 	case HTLCEndorsement_ENDORSEMENT_TRUE:
 		return true

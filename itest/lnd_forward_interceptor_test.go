@@ -603,6 +603,7 @@ func testHTLCEndorsement(ht *lntest.HarnessTest) {
 		bobInterceptor,
 		routerrpc.HTLCEndorsement_ENDORSEMENT_TRUE,
 		routerrpc.HTLCEndorsement_ENDORSEMENT_FALSE,
+		false,
 	)
 
 	// Assert that Carol receives the HTLC with the endorsement signal
@@ -612,12 +613,85 @@ func testHTLCEndorsement(ht *lntest.HarnessTest) {
 		carolInterceptor,
 		routerrpc.HTLCEndorsement_ENDORSEMENT_FALSE,
 		routerrpc.HTLCEndorsement_ENDORSEMENT_UNKNOWN,
+		false,
 	)
 
 	pmt, err := paymentClient.Recv()
 	require.NoError(ht, err)
 
 	require.Equal(ht, lnrpc.Payment_SUCCEEDED, pmt.Status)
+
+	// Now, we'll send a payment that does not explicitly have an
+	// endorsement signal set. We expect it to not be endorsed on the first
+	// attempt.
+	invReq = &lnrpc.Invoice{ValueMsat: 100_000_000}
+	addResponse = dave.RPC.AddInvoice(invReq)
+	paymentClient = alice.RPC.SendPayment(&routerrpc.SendPaymentRequest{
+		PaymentRequest:    addResponse.PaymentRequest,
+		NoInflightUpdates: true,
+		TimeoutSeconds:    120,
+		FeeLimitMsat:      noFeeLimitMsat,
+		MaxParts:          2,
+	})
+
+	interceptAndCheckEndorsed(
+		ht,
+		bobInterceptor,
+		routerrpc.HTLCEndorsement_ENDORSEMENT_FALSE,
+		routerrpc.HTLCEndorsement_ENDORSEMENT_FALSE,
+		false,
+	)
+
+	// This time, we'll fail the payment at carol, so that Alice is
+	// prompted to split the HTLC into two parts and endorse them.
+	interceptAndCheckEndorsed(
+		ht,
+		carolInterceptor,
+		routerrpc.HTLCEndorsement_ENDORSEMENT_FALSE,
+		routerrpc.HTLCEndorsement_ENDORSEMENT_FALSE,
+		true,
+	)
+
+	// Assert that bob now gets two HTLCs that are endorsed, because our
+	// payment has been split.
+	interceptAndCheckEndorsed(
+		ht,
+		bobInterceptor,
+		routerrpc.HTLCEndorsement_ENDORSEMENT_TRUE,
+		routerrpc.HTLCEndorsement_ENDORSEMENT_TRUE,
+		false,
+	)
+	interceptAndCheckEndorsed(
+		ht,
+		bobInterceptor,
+		routerrpc.HTLCEndorsement_ENDORSEMENT_TRUE,
+		routerrpc.HTLCEndorsement_ENDORSEMENT_TRUE,
+		false,
+	)
+
+	// And they're forwarded on to carol.
+	interceptAndCheckEndorsed(
+		ht,
+		carolInterceptor,
+		routerrpc.HTLCEndorsement_ENDORSEMENT_TRUE,
+		routerrpc.HTLCEndorsement_ENDORSEMENT_TRUE,
+		false,
+	)
+	interceptAndCheckEndorsed(
+		ht,
+		carolInterceptor,
+		routerrpc.HTLCEndorsement_ENDORSEMENT_TRUE,
+		routerrpc.HTLCEndorsement_ENDORSEMENT_TRUE,
+		false,
+	)
+
+	// Finally assert that the payment succeeds eventually and has our
+	// expected number of HTLCs.
+	pmt, err = paymentClient.Recv()
+	require.NoError(ht, err)
+
+	require.Equal(ht, lnrpc.Payment_SUCCEEDED, pmt.Status)
+	require.Len(ht, pmt.Htlcs, 3)
 
 	// Finally, close channels.
 	ht.CloseChannel(alice, cpAB)
@@ -627,7 +701,7 @@ func testHTLCEndorsement(ht *lntest.HarnessTest) {
 
 func interceptAndCheckEndorsed(ht *lntest.HarnessTest,
 	interceptor rpc.InterceptorClient, incomingEndorsed,
-	outgoingEndorsed routerrpc.HTLCEndorsement) {
+	outgoingEndorsed routerrpc.HTLCEndorsement, fail bool) {
 
 	respChan := make(chan *routerrpc.ForwardHtlcInterceptRequest, 1)
 	go func() {
@@ -649,10 +723,15 @@ func interceptAndCheckEndorsed(ht *lntest.HarnessTest,
 		ht.Fatal("timeout waiting for interceptor")
 	}
 
-	err := interceptor.Send(&routerrpc.ForwardHtlcInterceptResponse{
+	resumeResp := &routerrpc.ForwardHtlcInterceptResponse{
 		IncomingCircuitKey: request.IncomingCircuitKey,
-		Action:             routerrpc.ResolveHoldForwardAction_RESUME,
-		Endorsed:           outgoingEndorsed,
-	})
+		Action:             routerrpc.ResolveHoldForwardAction_FAIL,
+	}
+	if !fail {
+		resumeResp.Action = routerrpc.ResolveHoldForwardAction_RESUME
+		resumeResp.Endorsed = outgoingEndorsed
+	}
+
+	err := interceptor.Send(resumeResp)
 	require.NoError(ht, err, "interceptor resume request")
 }

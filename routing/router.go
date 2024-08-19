@@ -2598,7 +2598,9 @@ func (r *ChannelRouter) sendToRoute(htlcHash lntypes.Hash, endorsed bool,
 	// the `err` returned here has already been processed by
 	// `handleSwitchErr`, which means if there's a terminal failure, the
 	// payment has been failed.
-	result, err := p.sendAttempt(attempt)
+	// Note: set to zero because we always only make one attempt for
+	// sendtoroute.
+	result, err := p.sendAttempt(attempt, 0)
 	if err != nil {
 		return nil, err
 	}
