@@ -830,7 +830,7 @@ func testErrorHandlingOnChainFailure(ht *lntest.HarnessTest) {
 
 	// Mine blocks so that Bob will claim his CSV delayed local commitment,
 	// we've already mined 1 block so we need one less than our CSV.
-	ht.MineBlocks(node.DefaultCSV - 1)
+	ht.MineEmptyBlocks(node.DefaultCSV - 1)
 	ht.AssertNumPendingSweeps(ht.Bob, 1)
 	ht.MineEmptyBlocks(1)
 	ht.MineBlocksAndAssertNumTxes(1, 1)
@@ -844,7 +844,7 @@ func testErrorHandlingOnChainFailure(ht *lntest.HarnessTest) {
 	// value.
 	info := ht.Bob.RPC.GetInfo()
 	target := carolHTLC.IncomingExpiry - info.BlockHeight
-	ht.MineBlocks(int(target))
+	ht.MineEmptyBlocks(int(target))
 
 	// Wait for Bob's timeout transaction in the mempool, since we've
 	// suspended Carol we don't need to account for her commitment output
@@ -867,7 +867,7 @@ func testErrorHandlingOnChainFailure(ht *lntest.HarnessTest) {
 
 	// Clean up the rest of our force close: mine blocks so that Bob's CSV
 	// expires plus one block to trigger his sweep and then mine it.
-	ht.MineBlocks(node.DefaultCSV + 1)
+	ht.MineEmptyBlocks(node.DefaultCSV + 1)
 	ht.MineBlocksAndAssertNumTxes(1, 1)
 
 	// Bring carol back up so that we can close out the rest of our
