@@ -105,6 +105,11 @@ type RouterBackend struct {
 	// TODO(yy): remove this config after the new status code is fully
 	// deployed to the network(v0.20.0).
 	UseStatusInitiated bool
+
+	// OnlyEndorseOnRetry is set to true if the first HTLC attempt for a
+	// payment should be unendorsed, and subsequent attempts should be
+	// endorsed. If it is not set, all attempts will be endorsed.
+	OnlyEndorseOnRetry bool
 }
 
 // MissionControl defines the mission control dependencies of routerrpc.
@@ -762,17 +767,25 @@ func (r *RouterBackend) UnmarshallRoute(rpcroute *lnrpc.Route) (
 	return route, nil
 }
 
-func extractHTLCEndorsement(request HTLCEndorsement) bool {
+func extractHTLCEndorsement(request HTLCEndorsement,
+	onlyEndorseOnRetry bool) bool {
+
 	switch request {
+	// If not explicitly set, endorse the payment unless explicitly
+	// disabled for the first attempt of a payment.
 	case HTLCEndorsement_ENDORSEMENT_UNKNOWN:
-		// By default do not endorse payment if no explicit signal was
-		// not provided.
-		return false
+		if onlyEndorseOnRetry {
+			return false
+		}
+
+		return true
 
 	case HTLCEndorsement_ENDORSEMENT_TRUE:
 		return true
 
 	case HTLCEndorsement_ENDORSEMENT_FALSE:
+		if onlyEndorseOnRetry {
+		}
 		return false
 	}
 
@@ -785,8 +798,11 @@ func extractHTLCEndorsement(request HTLCEndorsement) bool {
 func (r *RouterBackend) extractIntentFromSendRequest(
 	rpcPayReq *SendPaymentRequest) (*routing.LightningPayment, error) {
 
+	// Check cfg here
 	payIntent := &routing.LightningPayment{
-		Endorsed: extractHTLCEndorsement(rpcPayReq.Endorsed),
+		Endorsed: extractHTLCEndorsement(
+			rpcPayReq.Endorsed, r.OnlyEndorseOnRetry,
+		),
 	}
 
 	// Pass along time preference.

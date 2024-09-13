@@ -732,6 +732,7 @@ func (r *rpcServer) addDeps(s *server, macService *macaroons.Service,
 		},
 		SetChannelAuto:     s.chanStatusMgr.RequestAuto,
 		UseStatusInitiated: subServerCgs.RouterRPC.UseStatusInitiated,
+		OnlyEndorseOnRetry: subServerCgs.RouterRPC.OnlyEndorseOnRetry,
 	}
 
 	genInvoiceFeatures := func() *lnwire.FeatureVector {

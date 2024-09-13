@@ -22,6 +22,8 @@ type Config struct {
 	// deployed to the network(v0.20.0).
 	UseStatusInitiated bool `long:"usestatusinitiated" description:"If true, the router will send Payment_INITIATED for new payments, otherwise Payment_In_FLIGHT will be sent for compatibility concerns."`
 
+	OnlyEndorseOnRetry bool `long:"onlyendorseonretry" description:"If true, the first attempt of a payment will be unendorsed (and all subsequent attempts endorsed)."`
+
 	// RouterMacPath is the path for the router macaroon. If unspecified
 	// then we assume that the macaroon will be found under the network
 	// directory, named DefaultRouterMacFilename.
