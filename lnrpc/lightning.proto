@@ -4094,6 +4094,8 @@ message HTLCAttempt {
 
     // The preimage that was used to settle the HTLC.
     bytes preimage = 6;
+
+    bool endorsed = 8;
 }
 
 message ListPaymentsRequest {

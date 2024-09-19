@@ -1324,6 +1324,7 @@ func (r *RouterBackend) MarshalHTLCAttempt(
 		AttemptId:     htlc.AttemptID,
 		AttemptTimeNs: MarshalTimeNano(htlc.AttemptTime),
 		Route:         route,
+		Endorsed:      htlc.Endorsed,
 	}
 
 	switch {

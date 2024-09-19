@@ -5116,6 +5116,9 @@
           "type": "string",
           "format": "byte",
           "description": "The preimage that was used to settle the HTLC."
+        },
+        "endorsed": {
+          "type": "boolean"
         }
       }
     },
