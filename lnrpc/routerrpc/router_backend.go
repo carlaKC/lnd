@@ -770,6 +770,9 @@ func (r *RouterBackend) UnmarshallRoute(rpcroute *lnrpc.Route) (
 func extractHTLCEndorsement(request HTLCEndorsement,
 	onlyEndorseOnRetry bool) bool {
 
+	log.Infof("Picking endorsement with request: %v, endorse on retry: %v",
+		request, onlyEndorseOnRetry)
+
 	switch request {
 	// If not explicitly set, endorse the payment unless explicitly
 	// disabled for the first attempt of a payment.
@@ -784,8 +787,6 @@ func extractHTLCEndorsement(request HTLCEndorsement,
 		return true
 
 	case HTLCEndorsement_ENDORSEMENT_FALSE:
-		if onlyEndorseOnRetry {
-		}
 		return false
 	}
 
