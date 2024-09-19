@@ -1062,6 +1062,16 @@ func serializeHTLCAttemptInfo(w io.Writer, a *HTLCAttemptInfo) error {
 		return err
 	}
 
+	if a.Endorsed {
+		if _, err := w.Write([]byte{1}); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write([]byte{0}); err != nil {
+			return err
+		}
+	}
+
 	// If the hash is nil we can just return.
 	if a.Hash == nil {
 		return nil
@@ -1089,6 +1099,16 @@ func deserializeHTLCAttemptInfo(r io.Reader) (*HTLCAttemptInfo, error) {
 	a.AttemptTime, err = deserializeTime(r)
 	if err != nil {
 		return nil, err
+	}
+
+	var endorsed [1]byte
+	_, err = r.Read(endorsed[:])
+	if err != nil {
+		return nil, err
+	}
+
+	if endorsed[0] == 1 {
+		a.Endorsed = true
 	}
 
 	hash := lntypes.Hash{}

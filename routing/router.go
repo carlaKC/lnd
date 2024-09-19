@@ -2589,7 +2589,7 @@ func (r *ChannelRouter) sendToRoute(htlcHash lntypes.Hash, endorsed bool,
 	// NOTE: we use zero `remainingAmt` here to simulate the same effect of
 	// setting the lastShard to be false, which is used by previous
 	// implementation.
-	attempt, err := p.registerAttempt(rt, 0)
+	attempt, err := p.registerAttempt(rt, 0, lnwire.EndorsementSignal(endorsed))
 	if err != nil {
 		return nil, err
 	}
@@ -2600,7 +2600,7 @@ func (r *ChannelRouter) sendToRoute(htlcHash lntypes.Hash, endorsed bool,
 	// payment has been failed.
 	// Note: set to zero because we always only make one attempt for
 	// sendtoroute.
-	result, err := p.sendAttempt(attempt, 0)
+	result, err := p.sendAttempt(attempt, 0, lnwire.EndorsementSignal(endorsed))
 	if err != nil {
 		return nil, err
 	}

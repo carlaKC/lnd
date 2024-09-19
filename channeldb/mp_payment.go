@@ -45,12 +45,14 @@ type HTLCAttemptInfo struct {
 	// in which the payment's PaymentHash in the PaymentCreationInfo should
 	// be used.
 	Hash *lntypes.Hash
+
+	Endorsed bool
 }
 
 // NewHtlcAttempt creates a htlc attempt.
 func NewHtlcAttempt(attemptID uint64, sessionKey *btcec.PrivateKey,
 	route route.Route, attemptTime time.Time,
-	hash *lntypes.Hash) *HTLCAttempt {
+	hash *lntypes.Hash, endorsed bool) *HTLCAttempt {
 
 	var scratch [btcec.PrivKeyBytesLen]byte
 	copy(scratch[:], sessionKey.Serialize())
@@ -62,6 +64,7 @@ func NewHtlcAttempt(attemptID uint64, sessionKey *btcec.PrivateKey,
 		Route:            route,
 		AttemptTime:      attemptTime,
 		Hash:             hash,
+		Endorsed:         endorsed,
 	}
 
 	return &HTLCAttempt{HTLCAttemptInfo: info}

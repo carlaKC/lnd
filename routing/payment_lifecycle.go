@@ -282,15 +282,16 @@ lifecycle:
 
 		log.Tracef("Found route: %s", spew.Sdump(rt.Hops))
 
+		endorsed := lnwire.EndorsementSignal(p.endorsed || shardCount != 0)
 		// We found a route to try, create a new HTLC attempt to try.
-		attempt, err := p.registerAttempt(rt, ps.RemainingAmt)
+		attempt, err := p.registerAttempt(rt, ps.RemainingAmt, endorsed)
 		if err != nil {
 			return exitWithErr(err)
 		}
 
 		// Once the attempt is created, send it to the htlcswitch.
 		// TODO: provide count here?
-		result, err := p.sendAttempt(attempt, shardCount)
+		result, err := p.sendAttempt(attempt, shardCount, endorsed)
 		if err != nil {
 			return exitWithErr(err)
 		}
@@ -581,7 +582,8 @@ func (p *paymentLifecycle) collectResult(attempt *channeldb.HTLCAttempt) (
 // by using the route info provided. The `remainingAmt` is used to decide
 // whether this is the last attempt.
 func (p *paymentLifecycle) registerAttempt(rt *route.Route,
-	remainingAmt lnwire.MilliSatoshi) (*channeldb.HTLCAttempt, error) {
+	remainingAmt lnwire.MilliSatoshi, endorsed lnwire.EndorsementSignal) (
+	*channeldb.HTLCAttempt, error) {
 
 	// If this route will consume the last remaining amount to send
 	// to the receiver, this will be our last shard (for now).
@@ -589,7 +591,7 @@ func (p *paymentLifecycle) registerAttempt(rt *route.Route,
 
 	// Using the route received from the payment session, create a new
 	// shard to send.
-	attempt, err := p.createNewPaymentAttempt(rt, isLastAttempt)
+	attempt, err := p.createNewPaymentAttempt(rt, isLastAttempt, endorsed)
 	if err != nil {
 		return nil, err
 	}
@@ -608,7 +610,7 @@ func (p *paymentLifecycle) registerAttempt(rt *route.Route,
 
 // createNewPaymentAttempt creates a new payment attempt from the given route.
 func (p *paymentLifecycle) createNewPaymentAttempt(rt *route.Route,
-	lastShard bool) (*channeldb.HTLCAttempt, error) {
+	lastShard bool, endorsed lnwire.EndorsementSignal) (*channeldb.HTLCAttempt, error) {
 
 	// Generate a new key to be used for this attempt.
 	sessionKey, err := generateNewSessionKey()
@@ -650,6 +652,7 @@ func (p *paymentLifecycle) createNewPaymentAttempt(rt *route.Route,
 	// attempt information.
 	attempt := channeldb.NewHtlcAttempt(
 		attemptID, sessionKey, *rt, p.router.cfg.Clock.Now(), &hash,
+		bool(endorsed),
 	)
 
 	return attempt, nil
@@ -659,7 +662,7 @@ func (p *paymentLifecycle) createNewPaymentAttempt(rt *route.Route,
 // the payment. If this attempt fails, then we'll continue on to the next
 // available route.
 func (p *paymentLifecycle) sendAttempt(attempt *channeldb.HTLCAttempt,
-	count int) (*attemptResult, error) {
+	count int, endorsed lnwire.EndorsementSignal) (*attemptResult, error) {
 
 	log.Debugf("Attempting to send payment %v (pid=%v), count: %v", p.identifier,
 		attempt.AttemptID, count)
@@ -676,7 +679,7 @@ func (p *paymentLifecycle) sendAttempt(attempt *channeldb.HTLCAttempt,
 		Amount:      rt.TotalAmount,
 		Expiry:      rt.TotalTimeLock,
 		PaymentHash: *attempt.Hash,
-		Endorsed:    lnwire.EndorsementSignal(p.endorsed || count != 0),
+		Endorsed:    endorsed,
 	}
 
 	// Generate the raw encoded sphinx packet to be included along
@@ -708,7 +711,8 @@ func (p *paymentLifecycle) sendAttempt(attempt *channeldb.HTLCAttempt,
 	}
 
 	log.Debugf("Attempt %v for payment %v successfully sent to switch, "+
-		"route: %v", attempt.AttemptID, p.identifier, &attempt.Route)
+		"route: %v (endorsed=%v)", attempt.AttemptID, p.identifier,
+		&attempt.Route, endorsed)
 
 	return &attemptResult{
 		attempt: attempt,
