@@ -2176,6 +2176,14 @@ func createThreeHopNetwork(ht *lntest.HarnessTest,
 	zeroConf bool) (*lnrpc.ChannelPoint,
 	*lnrpc.ChannelPoint, *node.HarnessNode) {
 
+	// LND currently doesn't resolve any HTLCs with incoming custom records
+	// on chain. Turn off endorsement signals from Bob -> Carol so that
+	// Carol can properly resolve HTLCs on chain.
+	ht.RestartNodeWithExtraArgs(bob, append(
+		bob.Cfg.ExtraArgs,
+		"--protocol.no-experimental-endorsement",
+	))
+
 	ht.EnsureConnected(alice, bob)
 
 	// We'll create a new node "carol" and have Bob connect to her.
