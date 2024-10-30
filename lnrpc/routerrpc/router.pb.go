@@ -3253,6 +3253,10 @@ type ForwardHtlcInterceptResponse struct {
 	// Any custom records that should be set on the p2p wire message message of
 	// the resumed HTLC. This field is ignored if the action is not
 	// RESUME_MODIFIED.
+	//
+	// This map will merge with the existing set of custom records (if any),
+	// replacing any conflicting types. Note that there currently is no support
+	// deleting existing custom records (they can only be replaced).
 	OutWireCustomRecords map[uint64][]byte `protobuf:"bytes,8,rep,name=out_wire_custom_records,json=outWireCustomRecords,proto3" json:"out_wire_custom_records,omitempty" protobuf_key:"varint,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
 }
 
