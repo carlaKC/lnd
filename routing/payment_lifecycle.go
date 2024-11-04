@@ -41,7 +41,7 @@ type paymentLifecycle struct {
 	// been collected. A nil error means the attempt is either successful
 	// or failed with temporary error. Otherwise, we should exit the
 	// lifecycle loop as a terminal error has occurred.
-	resultCollected chan error
+	resultCollected chan attemptResult
 
 	// resultCollector is a function that is used to collect the result of
 	// an HTLC attempt, which is always mounted to `p.collectResultAsync`
@@ -65,7 +65,7 @@ func newPaymentLifecycle(r *ChannelRouter, feeLimit lnwire.MilliSatoshi,
 		shardTracker:    shardTracker,
 		currentHeight:   currentHeight,
 		quit:            make(chan struct{}),
-		resultCollected: make(chan error, 1),
+		resultCollected: make(chan attemptResult, 1),
 	}
 
 	// Mount the result collector.
@@ -148,10 +148,10 @@ func (p *paymentLifecycle) decideNextStep(
 		// NOTE: we don't check `p.quit` since `decideNextStep` is
 		// running in the same goroutine as `resumePayment`.
 		select {
-		case err := <-p.resultCollected:
+		case result := <-p.resultCollected:
 			// If an error is returned, exit with it.
-			if err != nil {
-				return stepExit, err
+			if result.err != nil {
+				return stepExit, result.err
 			}
 
 			log.Tracef("Received attempt result for payment %v",
@@ -443,7 +443,10 @@ func (p *paymentLifecycle) collectResultAsync(attempt *channeldb.HTLCAttempt) {
 		// error to `resultCollected`.
 		select {
 		// Send the signal or quit.
-		case p.resultCollected <- err:
+		case p.resultCollected <- attemptResult{
+                        err: err,
+                        attempt: attempt,
+                }:
 
 		case <-p.quit:
 			log.Debugf("Lifecycle exiting while collecting "+
