@@ -566,4 +566,8 @@ var allTestCases = []*lntest.TestCase{
 		Name:     "removetx",
 		TestFunc: testRemoveTx,
 	},
+	{
+		Name:     "endorse retry",
+		TestFunc: testEndorsementRetry,
+	},
 }
