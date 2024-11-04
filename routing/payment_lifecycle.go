@@ -116,27 +116,44 @@ const (
 	stepExit
 )
 
+type nextHtlcStep struct {
+	stateStep stateStep
+
+	// previousAttempt is the attempt that most recently failed, only
+	// populated if our step is a result of a result having been collected.
+	previousAttempt *channeldb.HTLCAttempt
+}
+
 // decideNextStep is used to determine the next step in the payment lifecycle.
 func (p *paymentLifecycle) decideNextStep(
-	payment dbMPPayment) (stateStep, error) {
+	payment dbMPPayment) (nextHtlcStep, error) {
 
 	// Check whether we could make new HTLC attempts.
 	allow, err := payment.AllowMoreAttempts()
 	if err != nil {
-		return stepExit, err
+		return nextHtlcStep{
+			stateStep: stepExit,
+		}, err
 	}
 
+	var previousAttempt *channeldb.HTLCAttempt
 	if !allow {
 		// Check whether we need to wait for results.
 		wait, err := payment.NeedWaitAttempts()
 		if err != nil {
-			return stepExit, err
+			return nextHtlcStep{
+				previousAttempt: previousAttempt,
+				stateStep:       stepExit,
+			}, err
 		}
 
 		// If we are not allowed to make new HTLC attempts and there's
 		// no need to wait, the lifecycle is done and we can exit.
 		if !wait {
-			return stepExit, nil
+			return nextHtlcStep{
+				previousAttempt: previousAttempt,
+				stateStep:       stepExit,
+			}, nil
 		}
 
 		log.Tracef("Waiting for attempt results for payment %v",
@@ -149,23 +166,36 @@ func (p *paymentLifecycle) decideNextStep(
 		// running in the same goroutine as `resumePayment`.
 		select {
 		case result := <-p.resultCollected:
+			previousAttempt = result.attempt
+
 			// If an error is returned, exit with it.
 			if result.err != nil {
-				return stepExit, result.err
+				return nextHtlcStep{
+					previousAttempt: previousAttempt,
+					stateStep:       stepExit,
+				}, result.err
 			}
 
 			log.Tracef("Received attempt result for payment %v",
 				p.identifier)
 
 		case <-p.router.quit:
-			return stepExit, ErrRouterShuttingDown
+			return nextHtlcStep{
+				stateStep: stepExit,
+			}, ErrRouterShuttingDown
 		}
 
-		return stepSkip, nil
+		return nextHtlcStep{
+			previousAttempt: previousAttempt,
+			stateStep:       stepSkip,
+		}, nil
 	}
 
 	// Otherwise we need to make more attempts.
-	return stepProceed, nil
+	return nextHtlcStep{
+		previousAttempt: previousAttempt,
+		stateStep:       stepProceed,
+	}, nil
 }
 
 // resumePayment resumes the paymentLifecycle from the current state.
@@ -245,7 +275,7 @@ lifecycle:
 			return exitWithErr(err)
 		}
 
-		switch step {
+		switch step.stateStep {
 		// Exit the for loop and return below.
 		case stepExit:
 			break lifecycle
@@ -444,9 +474,9 @@ func (p *paymentLifecycle) collectResultAsync(attempt *channeldb.HTLCAttempt) {
 		select {
 		// Send the signal or quit.
 		case p.resultCollected <- attemptResult{
-                        err: err,
-                        attempt: attempt,
-                }:
+			err:     err,
+			attempt: attempt,
+		}:
 
 		case <-p.quit:
 			log.Debugf("Lifecycle exiting while collecting "+
