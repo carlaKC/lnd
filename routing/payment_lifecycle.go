@@ -116,12 +116,51 @@ const (
 	stepExit
 )
 
+func (s stateStep) String() string {
+	switch s {
+	case stepSkip:
+		return "skipStep"
+
+	case stepProceed:
+		return "proceed"
+
+	case stepExit:
+		return "exit"
+
+	default:
+		return fmt.Sprintf("Step: %d", s)
+	}
+}
+
 type nextHtlcStep struct {
 	stateStep stateStep
 
 	// previousAttempt is the attempt that most recently failed, only
 	// populated if our step is a result of a result having been collected.
 	previousAttempt *channeldb.HTLCAttempt
+}
+
+func (n nextHtlcStep) String() string {
+	if n.previousAttempt == nil {
+		return fmt.Sprintf("Step: %v, no previous attempt", n.stateStep)
+	}
+
+	return fmt.Sprintf("Step: %v with previous endorsed: %v (success=%v, "+
+		"failure=%v)", n.stateStep, n.previousAttempt.Endorsed,
+		n.previousAttempt.Settle != nil,
+		n.previousAttempt.Failure != nil)
+}
+
+// retryPathEndorsed indicates whether we should retry the same path that just
+// failed, but this time endorse it.
+func (n nextHtlcStep) retryPathEndorsed() bool {
+	// Only retry if we're stepping through our state because another shard
+	// just failed.
+	if n.previousAttempt == nil {
+		return false
+	}
+
+	return n.previousAttempt.Failure != nil && !n.previousAttempt.Endorsed
 }
 
 // decideNextStep is used to determine the next step in the payment lifecycle.
@@ -275,6 +314,8 @@ lifecycle:
 			return exitWithErr(err)
 		}
 
+		log.Infof("Progressing with state step: %v", step)
+
 		switch step.stateStep {
 		// Exit the for loop and return below.
 		case stepExit:
@@ -293,10 +334,28 @@ lifecycle:
 			return exitWithErr(err)
 		}
 
-		// Now request a route to be used to create our HTLC attempt.
-		rt, err := p.requestRoute(ps)
-		if err != nil {
-			return exitWithErr(err)
+		var (
+			rt       *route.Route
+			endorsed = lnwire.EndorsementSignal(p.endorsed)
+		)
+
+		// Either retry the same path, flipping to positive endorsement
+		// or query a fresh path leaving endorsement as-is.
+		if step.retryPathEndorsed() {
+			log.Infof("Retrying previous path with endorsed htlc")
+			rt = &step.previousAttempt.HTLCAttemptInfo.Route
+			endorsed = lnwire.EndorsementSignal(true)
+
+		} else {
+			log.Infof("Querying new route with endorsed: %v",
+				endorsed)
+
+			// Now request a route to be used to create our HTLC
+			// attempt.
+			rt, err = p.requestRoute(ps)
+			if err != nil {
+				return exitWithErr(err)
+			}
 		}
 
 		// We may not be able to find a route for current attempt. In
@@ -312,7 +371,6 @@ lifecycle:
 
 		log.Tracef("Found route: %s", spew.Sdump(rt.Hops))
 
-		endorsed := lnwire.EndorsementSignal(p.endorsed || shardCount != 0)
 		// We found a route to try, create a new HTLC attempt to try.
 		attempt, err := p.registerAttempt(rt, ps.RemainingAmt, endorsed)
 		if err != nil {
