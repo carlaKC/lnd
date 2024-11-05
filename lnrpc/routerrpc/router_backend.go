@@ -767,30 +767,22 @@ func (r *RouterBackend) UnmarshallRoute(rpcroute *lnrpc.Route) (
 	return route, nil
 }
 
-func extractHTLCEndorsement(request HTLCEndorsement,
-	onlyEndorseOnRetry bool) bool {
+func getHtlcEndorsement(request HTLCEndorsement) *bool {
+	log.Infof("Picking endorsement with request: %v", request)
 
-	log.Infof("Picking endorsement with request: %v, endorse on retry: %v",
-		request, onlyEndorseOnRetry)
-
+	var endorse bool
 	switch request {
-	// If not explicitly set, endorse the payment unless explicitly
-	// disabled for the first attempt of a payment.
 	case HTLCEndorsement_ENDORSEMENT_UNKNOWN:
-		if onlyEndorseOnRetry {
-			return false
-		}
-
-		return true
+		return nil
 
 	case HTLCEndorsement_ENDORSEMENT_TRUE:
-		return true
+		endorse = true
 
 	case HTLCEndorsement_ENDORSEMENT_FALSE:
-		return false
+		endorse = false
 	}
 
-	return false
+	return &endorse
 }
 
 // extractIntentFromSendRequest attempts to parse the SendRequest details
@@ -801,9 +793,7 @@ func (r *RouterBackend) extractIntentFromSendRequest(
 
 	// Check cfg here
 	payIntent := &routing.LightningPayment{
-		Endorsed: extractHTLCEndorsement(
-			rpcPayReq.Endorsed, r.OnlyEndorseOnRetry,
-		),
+		Endorsed: getHtlcEndorsement(rpcPayReq.Endorsed),
 	}
 
 	// Pass along time preference.

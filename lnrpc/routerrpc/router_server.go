@@ -425,9 +425,7 @@ func (s *Server) SendToRouteV2(ctx context.Context,
 
 	var (
 		attempt  *channeldb.HTLCAttempt
-		endorsed = extractHTLCEndorsement(
-			req.Endorsed, s.cfg.OnlyEndorseOnRetry,
-		)
+		endorsed = getHtlcEndorsement(req.Endorsed)
 	)
 
 	// Pass route to the router. This call returns the full htlc attempt

@@ -12,6 +12,14 @@ import (
 // testEndorsement sets up a 5 hop network and tests propagation of
 // experimental endorsement signals.
 func testEndorsementRetry(ht *lntest.HarnessTest) {
+	testEndorsement(ht, routerrpc.HTLCEndorsement_ENDORSEMENT_UNKNOWN)
+	testEndorsement(ht, routerrpc.HTLCEndorsement_ENDORSEMENT_FALSE)
+	testEndorsement(ht, routerrpc.HTLCEndorsement_ENDORSEMENT_TRUE)
+}
+
+func testEndorsement(ht *lntest.HarnessTest,
+	requestedEndorsement routerrpc.HTLCEndorsement) {
+
 	alice, bob := ht.Alice, ht.Bob
 	carol := ht.NewNode("carol", nil)
 
@@ -47,17 +55,17 @@ func testEndorsementRetry(ht *lntest.HarnessTest) {
 	ht.AssertTopologyChannelOpen(alice, cpBC1)
 	ht.AssertTopologyChannelOpen(alice, cpBC2)
 
-	bobIntercept, cancelBob := bob.RPC.HtlcInterceptor()
-	defer cancelBob()
+	bobIntercept, cancelBobInterceptor := bob.RPC.HtlcInterceptor()
+	defer cancelBobInterceptor()
 
-	req := &lnrpc.Invoice{ValueMsat: 1000}
+	req := &lnrpc.Invoice{ValueMsat: 20000000}
 	addResponse := carol.RPC.AddInvoice(req)
 
 	sendReq := &routerrpc.SendPaymentRequest{
 		PaymentRequest: addResponse.PaymentRequest,
 		TimeoutSeconds: int32(wait.PaymentTimeout.Seconds()),
 		FeeLimitMsat:   noFeeLimitMsat,
-		Endorsed:       routerrpc.HTLCEndorsement_ENDORSEMENT_FALSE,
+		Endorsed:       requestedEndorsement,
 	}
 
 	paymentClient := alice.RPC.SendPayment(sendReq)
@@ -67,11 +75,18 @@ func testEndorsementRetry(ht *lntest.HarnessTest) {
 	// isn't endorsed.
 	packet := ht.ReceiveHtlcInterceptor(bobIntercept)
 	originalChanOut := packet.OutgoingRequestedChanId
-	require.Equal(ht, routerrpc.HTLCEndorsement_ENDORSEMENT_FALSE,
-		packet.Endorsed)
+	originalAmt := packet.OutgoingAmountMsat
 
-	// Now, fail the HTLC back to prompt a retry on the same path with
-	// endorsement.
+	// By default we expect unendorsed HTLCs, unless the user set a desired
+	// value.
+	expectedEndorsment := routerrpc.HTLCEndorsement_ENDORSEMENT_FALSE
+	if requestedEndorsement != routerrpc.HTLCEndorsement_ENDORSEMENT_UNKNOWN {
+		expectedEndorsment = requestedEndorsement
+	}
+
+	require.Equal(ht, expectedEndorsment, packet.Endorsed)
+
+	// Fail back the HTLC to prompt retry logic.
 	err := bobIntercept.Send(&routerrpc.ForwardHtlcInterceptResponse{
 		IncomingCircuitKey: packet.IncomingCircuitKey,
 		Action:             routerrpc.ResolveHoldForwardAction_FAIL,
@@ -80,10 +95,24 @@ func testEndorsementRetry(ht *lntest.HarnessTest) {
 
 	// Wait for alice to retry the payment, this time endorsed.
 	packet = ht.ReceiveHtlcInterceptor(bobIntercept)
-	require.Equal(ht, originalChanOut, packet.OutgoingRequestedChanId,
-		"did not retry same route")
-	require.Equal(ht, routerrpc.HTLCEndorsement_ENDORSEMENT_TRUE,
-		packet.Endorsed, "did not retry endorsed")
+
+	// If we did not request an endorsement status, we expect the payment
+	// to be retried (this time endorsed) on the same channel.
+	//
+	// If the user did request a specific status, we expect them to try
+	// with another route (ie, our other channel) and the same endorsement
+	// status as last time.
+	if requestedEndorsement == routerrpc.HTLCEndorsement_ENDORSEMENT_UNKNOWN {
+		require.Equal(ht, originalChanOut, packet.OutgoingRequestedChanId,
+			"did not retry same route")
+		require.Equal(ht, routerrpc.HTLCEndorsement_ENDORSEMENT_TRUE,
+			packet.Endorsed, "did not retry endorsed")
+
+	} else {
+		checkPathChanged(ht, originalAmt, requestedEndorsement,
+			packet, originalChanOut)
+
+	}
 
 	err = bobIntercept.Send(&routerrpc.ForwardHtlcInterceptResponse{
 		IncomingCircuitKey: packet.IncomingCircuitKey,
@@ -91,5 +120,27 @@ func testEndorsementRetry(ht *lntest.HarnessTest) {
 	})
 	require.NoError(ht, err)
 
+	// If we got a new path and it was MPP, there will be another HTLC for
+	// the interceptor. Cancel it here so that the payment can complete.
+	cancelBobInterceptor()
+
 	ht.AssertPaymentStatusFromStream(paymentClient, lnrpc.Payment_SUCCEEDED)
+}
+
+// checkPathChanged asserts that we have a different path than previously -
+// either over a new channel, or a MPP split.
+func checkPathChanged(ht *lntest.HarnessTest, originalAmt uint64,
+	requestedEndorsement routerrpc.HTLCEndorsement,
+	packet *routerrpc.ForwardHtlcInterceptRequest, originalChan uint64) {
+
+	require.Equal(ht, requestedEndorsement,
+		packet.Endorsed, "did not retry endorsed")
+
+	// If there's a different channel id, then we're definitely on a new
+	// path.
+	if packet.OutgoingRequestedChanId != originalChan {
+		return
+	}
+
+	require.NotEqual(ht, originalAmt, packet.OutgoingAmountMsat)
 }

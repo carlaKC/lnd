@@ -26,7 +26,7 @@ var ErrPaymentLifecycleExiting = errors.New("payment lifecycle exiting")
 type paymentLifecycle struct {
 	router        *ChannelRouter
 	feeLimit      lnwire.MilliSatoshi
-	endorsed      bool
+	endorsed      *bool
 	identifier    lntypes.Hash
 	paySession    PaymentSession
 	shardTracker  shards.ShardTracker
@@ -52,7 +52,7 @@ type paymentLifecycle struct {
 
 // newPaymentLifecycle initiates a new payment lifecycle and returns it.
 func newPaymentLifecycle(r *ChannelRouter, feeLimit lnwire.MilliSatoshi,
-	endorsed bool, identifier lntypes.Hash, paySession PaymentSession,
+	endorsed *bool, identifier lntypes.Hash, paySession PaymentSession,
 	shardTracker shards.ShardTracker, timeout time.Duration,
 	currentHeight int32) *paymentLifecycle {
 
@@ -327,8 +327,9 @@ lifecycle:
 			prevAttempt = step.previousAttempt
 		}
 
-		log.Infof("Progressing with state step: %v, have prev attempt: %v",
-			step.stateStep, prevAttempt != nil)
+		log.Infof("Progressing with state step: %v, have prev attempt: "+
+			"%v and requested endorsement: %v", step.stateStep,
+			prevAttempt != nil, p.endorsed)
 
 		switch step.stateStep {
 		// Exit the for loop and return below.
@@ -350,12 +351,22 @@ lifecycle:
 
 		var (
 			rt       *route.Route
-			endorsed = lnwire.EndorsementSignal(p.endorsed)
+			endorsed lnwire.EndorsementSignal
 		)
 
-		// Either retry the same path, flipping to positive endorsement
-		// or query a fresh path leaving endorsement as-is.
-		if retryPathEndorsed(prevAttempt) {
+		// If the user requested a specific endorsement status, then we
+		// strictly stick to what they asked for.
+		if p.endorsed != nil {
+			endorsed = lnwire.EndorsementSignal(*p.endorsed)
+		}
+
+		// If the user did not request a specific endorsement status,
+		// and we just failed with an unendorsed HTLC, retry the same
+		// path but flip our signal to endorsed.
+		//
+		// Otherwise, query a new path and by default send an unendorsed
+		// payment, unless the user requested a specific status.
+		if retryPathEndorsed(prevAttempt) && p.endorsed == nil {
 			log.Infof("Retrying previous path with endorsed htlc")
 			rt = &prevAttempt.HTLCAttemptInfo.Route
 			endorsed = lnwire.EndorsementSignal(true)

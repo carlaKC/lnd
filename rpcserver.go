@@ -732,7 +732,6 @@ func (r *rpcServer) addDeps(s *server, macService *macaroons.Service,
 		},
 		SetChannelAuto:     s.chanStatusMgr.RequestAuto,
 		UseStatusInitiated: subServerCgs.RouterRPC.UseStatusInitiated,
-		OnlyEndorseOnRetry: subServerCgs.RouterRPC.OnlyEndorseOnRetry,
 	}
 
 	genInvoiceFeatures := func() *lnwire.FeatureVector {
@@ -5286,7 +5285,7 @@ func (r *rpcServer) dispatchPaymentIntent(
 	} else {
 		var attempt *channeldb.HTLCAttempt
 		attempt, routerErr = r.server.chanRouter.SendToRoute(
-			payIntent.rHash, false, payIntent.route,
+			payIntent.rHash, nil, payIntent.route,
 		)
 
 		if routerErr == nil {

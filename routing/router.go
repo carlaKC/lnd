@@ -709,7 +709,7 @@ func (r *ChannelRouter) Start() error {
 			// be tried. We also don't endorse the payment, since
 			// we're not dispatching any more htlcs.
 			_, _, err := r.sendPayment(
-				0, false,
+				0, nil,
 				payment.Info.PaymentIdentifier, 0,
 				paySession, shardTracker,
 			)
@@ -2318,8 +2318,9 @@ type LightningPayment struct {
 	// the payee.
 	Metadata []byte
 
-	// Endorsed indicates whether to endorse the payment.
-	Endorsed bool
+	// Endorsed indicates whether the caller provided an instruction to
+	// endorse the payment (nil indicating that we should use our default).
+	Endorsed *bool
 }
 
 // AMPOptions houses information that must be known in order to send an AMP
@@ -2488,7 +2489,7 @@ func (r *ChannelRouter) PreparePayment(payment *LightningPayment) (
 
 // SendToRoute sends a payment using the provided route and fails the payment
 // when an error is returned from the attempt.
-func (r *ChannelRouter) SendToRoute(htlcHash lntypes.Hash, endorsed bool,
+func (r *ChannelRouter) SendToRoute(htlcHash lntypes.Hash, endorsed *bool,
 	rt *route.Route) (*channeldb.HTLCAttempt, error) {
 
 	return r.sendToRoute(htlcHash, endorsed, rt, false)
@@ -2497,7 +2498,7 @@ func (r *ChannelRouter) SendToRoute(htlcHash lntypes.Hash, endorsed bool,
 // SendToRouteSkipTempErr sends a payment using the provided route and fails
 // the payment ONLY when a terminal error is returned from the attempt.
 func (r *ChannelRouter) SendToRouteSkipTempErr(htlcHash lntypes.Hash,
-	endorsed bool,
+	endorsed *bool,
 	rt *route.Route) (*channeldb.HTLCAttempt, error) {
 
 	return r.sendToRoute(htlcHash, endorsed, rt, true)
@@ -2509,7 +2510,7 @@ func (r *ChannelRouter) SendToRouteSkipTempErr(htlcHash lntypes.Hash,
 // information will contain the preimage. If an error occurs after the attempt
 // was initiated, both return values will be non-nil. If skipTempErr is true,
 // the payment won't be failed unless a terminal error has occurred.
-func (r *ChannelRouter) sendToRoute(htlcHash lntypes.Hash, endorsed bool,
+func (r *ChannelRouter) sendToRoute(htlcHash lntypes.Hash, endorsed *bool,
 	rt *route.Route, skipTempErr bool) (*channeldb.HTLCAttempt, error) {
 
 	// Calculate amount paid to receiver.
@@ -2584,12 +2585,16 @@ func (r *ChannelRouter) sendToRoute(htlcHash lntypes.Hash, endorsed bool,
 		r, 0, endorsed, paymentIdentifier, nil, shardTracker, 0, 0,
 	)
 
+	var endorseSignal lnwire.EndorsementSignal
+	if endorsed != nil {
+		endorseSignal = lnwire.EndorsementSignal(*endorsed)
+	}
 	// We found a route to try, create a new HTLC attempt to try.
 	//
 	// NOTE: we use zero `remainingAmt` here to simulate the same effect of
 	// setting the lastShard to be false, which is used by previous
 	// implementation.
-	attempt, err := p.registerAttempt(rt, 0, lnwire.EndorsementSignal(endorsed))
+	attempt, err := p.registerAttempt(rt, 0, endorseSignal)
 	if err != nil {
 		return nil, err
 	}
@@ -2600,7 +2605,7 @@ func (r *ChannelRouter) sendToRoute(htlcHash lntypes.Hash, endorsed bool,
 	// payment has been failed.
 	// Note: set to zero because we always only make one attempt for
 	// sendtoroute.
-	result, err := p.sendAttempt(attempt, 0, lnwire.EndorsementSignal(endorsed))
+	result, err := p.sendAttempt(attempt, 0, endorseSignal)
 	if err != nil {
 		return nil, err
 	}
@@ -2678,7 +2683,7 @@ func (r *ChannelRouter) sendToRoute(htlcHash lntypes.Hash, endorsed bool,
 // router will call this method for every payment still in-flight according to
 // the ControlTower.
 func (r *ChannelRouter) sendPayment(feeLimit lnwire.MilliSatoshi,
-	endorsed bool, identifier lntypes.Hash, timeout time.Duration,
+	endorsed *bool, identifier lntypes.Hash, timeout time.Duration,
 	paySession PaymentSession,
 	shardTracker shards.ShardTracker) ([32]byte, *route.Route, error) {
 
