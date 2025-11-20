@@ -39,6 +39,7 @@ import (
 	"github.com/lightningnetwork/lnd/channelnotifier"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/cluster"
+	"github.com/lightningnetwork/lnd/congestion"
 	"github.com/lightningnetwork/lnd/contractcourt"
 	"github.com/lightningnetwork/lnd/discovery"
 	"github.com/lightningnetwork/lnd/feature"
@@ -802,6 +803,7 @@ func newServer(ctx context.Context, cfg *Config, listenAddrs []net.Addr,
 			peer.HandleLocalCloseChanReqs(request)
 		},
 		FwdingLog:              dbs.ChanStateDB.ForwardingLog(),
+		ResourceManager:        &congestion.InactiveResourceManager{},
 		SwitchPackager:         channeldb.NewSwitchPackager(),
 		FetchLastChannelUpdate: s.fetchLastChanUpdate(),
 		Notifier:               s.cc.ChainNotifier,

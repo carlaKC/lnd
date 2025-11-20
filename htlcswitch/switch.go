@@ -16,6 +16,7 @@ import (
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/clock"
+	"github.com/lightningnetwork/lnd/congestion"
 	"github.com/lightningnetwork/lnd/contractcourt"
 	"github.com/lightningnetwork/lnd/fn/v2"
 	"github.com/lightningnetwork/lnd/graph/db/models"
@@ -138,6 +139,10 @@ type Config struct {
 	// circuit is successfully completed. So when we forward an HTLC, and a
 	// settle is eventually received.
 	FwdingLog ForwardingLog
+
+	// ResourceManager makes forwarding decisions for htlcs and sets
+	// accountability signals based on current resource utilization.
+	ResourceManager congestion.ResourceManager
 
 	// LocalChannelClose kicks-off the workflow to execute a cooperative or
 	// forced unilateral closure of the channel initiated by a local
@@ -2962,6 +2967,50 @@ func (s *Switch) handlePacketAdd(packet *htlcPacket,
 	//nolint:gosec
 	destination := destinations[rand.Intn(len(destinations))]
 
+	// Get an accountability signal for the outgoing htlc, dropping it if
+	// the resource manager cannot accommodate it.
+	t := uint64(lnwire.ExperimentalAccountableType)
+	value, _ := packet.inWireCustomRecords[t]
+	var accountable congestion.AccountableSignal
+	if len(value) == 1 && value[0] == 7 {
+		accountable = congestion.Accountable
+	} else {
+		accountable = congestion.Unaccountable
+	}
+
+	accountableOpt, err := s.cfg.ResourceManager.HandleUpdateAddHTLC(
+		congestion.ProposedHTLC{
+			AddedAt:              time.Now(),
+			AddedHeight:          atomic.LoadUint32(&s.bestHeight),
+			FeeMsat:              packet.incomingAmount - packet.amount,
+			IncomingExpiryHeight: packet.incomingTimeout,
+			IncomingCircuit:      packet.inKey(),
+			OutgoingChannel:      packet.outgoingChanID,
+			IncomingAccountable:  accountable,
+		},
+	)
+	if err != nil {
+		log.Warnf("incoming HTLC(%x) reputation check for outgoing "+
+			"link (id=%v) failed %v", htlc.PaymentHash[:],
+			packet.outgoingChanID, err)
+
+		return s.failAddPacket(packet, NewLinkError(
+			&lnwire.FailTemporaryChannelFailure{},
+		))
+	}
+
+	_, err = accountableOpt.UnwrapOrErr(fmt.Errorf("no resources"))
+	if err != nil {
+		log.Debugf("incoming HTLC(%x) with outgoing link (id=%v) not "+
+			"allocated resources", htlc.PaymentHash[:],
+			packet.outgoingChanID)
+
+		return s.failAddPacket(packet, NewLinkError(
+			&lnwire.FailTemporaryChannelFailure{},
+		))
+	}
+	// TODO(CKC): where can we set accountable??? and will it get persisted
+
 	// Retrieve the incoming link by its ShortChannelID. Note that the
 	// incomingChanID is never set to hop.Source here.
 	s.indexMtx.RLock()
@@ -3070,6 +3119,16 @@ func (s *Switch) handlePacketSettle(packet *htlcPacket) error {
 			circuit.IncomingAmount-circuit.OutgoingAmount,
 			circuit.Incoming.ChanID, circuit.Outgoing.ChanID)
 
+		if err := s.cfg.ResourceManager.HandleUpdateFulfillHTLC(
+			time.Now(), circuit.Incoming,
+		); err != nil {
+			log.Warnf("Failed to report HTLC(%x) success from "+
+				"IncomingChanID(%v) to OutgoingChanID(%v) to "+
+				"ResourceManager %v", circuit.PaymentHash[:],
+				circuit.Incoming.ChanID,
+				circuit.Outgoing.ChanID, err)
+		}
+
 		s.fwdEventMtx.Lock()
 		s.pendingFwdingEvents = append(
 			s.pendingFwdingEvents,
@@ -3120,6 +3179,18 @@ func (s *Switch) handlePacketFail(packet *htlcPacket,
 		// If this is a locally initiated HTLC, there's no need to
 		// forward it so we exit.
 		return nil
+	} else {
+		// TODO: double check that this is in the right place!
+		if err := s.cfg.ResourceManager.HandleUpdateFailHTLC(
+			time.Now(), circuit.Incoming,
+		); err != nil {
+			log.Warnf("Failed to report HTLC(%x) failure from "+
+				"IncomingChanID(%v) to OutgoingChanID(%v) to "+
+				"ResourceManager %v", circuit.PaymentHash[:],
+				circuit.Incoming.ChanID,
+				circuit.Outgoing.ChanID, err)
+
+		}
 	}
 
 	// Exit early if this hasSource is true. This flag is only set via
