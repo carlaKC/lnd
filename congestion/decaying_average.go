@@ -91,12 +91,12 @@ func saturatingAddInt64(a, b int64) int64 {
 	c := a + b
 
 	// Check for overflow
-	if (b > 0 && a > math.MaxInt64-b) {
+	if b > 0 && a > math.MaxInt64-b {
 		return math.MaxInt64
 	}
 
 	// Check for underflow
-	if (b < 0 && a < math.MinInt64-b) {
+	if b < 0 && a < math.MinInt64-b {
 		return math.MinInt64
 	}
 

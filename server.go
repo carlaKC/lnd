@@ -803,7 +803,7 @@ func newServer(ctx context.Context, cfg *Config, listenAddrs []net.Addr,
 			peer.HandleLocalCloseChanReqs(request)
 		},
 		FwdingLog:              dbs.ChanStateDB.ForwardingLog(),
-		ResourceManager:        &congestion.InactiveResourceManager{},
+		ResourceManager:        congestion.NewManager(),
 		SwitchPackager:         channeldb.NewSwitchPackager(),
 		FetchLastChannelUpdate: s.fetchLastChanUpdate(),
 		Notifier:               s.cc.ChainNotifier,
