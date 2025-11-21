@@ -25,6 +25,11 @@ var ErrInvalidMsat = fmt.Errorf("msat value out of valid range")
 // hold time, which is not practically possible.
 var ErrInvalidHoldTime = fmt.Errorf("hold time less than or equal to zero")
 
+// ErrExpiringHTLC is returned when a htlc is presented that is expiring on
+// the incoming link. We do not expect to forward expiring HTLCs, as there is
+// risk of loss of funds.
+var ErrExpiringHTLC = fmt.Errorf("incoming htlc is expiring")
+
 // InFlightHTLC describes a forwarded HTLC that is currently irrevocably
 // committed on the outgoing channel, and has not yet been settled or failed.
 type InFlightHTLC struct {
@@ -266,17 +271,25 @@ func (m *Manager) HandleUpdateAddHTLC(proposed ProposedHTLC) (fn.Option[bool],
 		)), nil
 	}
 
+	hasReputation, err := m.hasReputation(
+		proposed.AddedAt, proposed.AddedHeight, proposed.FeeMsat,
+		proposed.IncomingExpiryHeight, proposed.IncomingCircuit.ChanID,
+		proposed.OutgoingChannel,
+	)
+	if err != nil {
+		return fn.None[bool](), err
+	}
+
 	m.inFlightByIncoming[proposed.IncomingCircuit] = inFlightData{
 		addedAt:              proposed.AddedAt,
 		addedHeight:          proposed.AddedHeight,
 		feeMsat:              proposed.FeeMsat,
 		incomingExpiryHeight: proposed.IncomingExpiryHeight,
 		outgoingChannel:      proposed.OutgoingChannel,
-		// TODO: choose outgoing value and set it here
-		outgoingAccountable: proposed.IncomingAccountable,
+		outgoingAccountable:  AccountableSignal(hasReputation),
 	}
 
-	return fn.Some(bool(proposed.IncomingAccountable)), nil
+	return fn.Some(hasReputation), nil
 }
 
 // HandleUpdateFulfillHTLC removes the in-flight HTLC from tracking when it
@@ -298,6 +311,35 @@ func (m *Manager) HandleUpdateFailHTLC(resolvedAt time.Time,
 	defer m.lock.Unlock()
 
 	return m.removeInFlight(incomingCircuit, resolvedAt, false)
+}
+
+// Note: must be called with m.Lock held.
+func (m *Manager) hasReputation(addedAt time.Time, addedHeight uint32,
+	feeMsat lnwire.MilliSatoshi, incomingExpiryHeight uint32,
+	incomingChannel lnwire.ShortChannelID,
+	outgoingChannel lnwire.ShortChannelID) (bool, error) {
+
+	if incomingExpiryHeight <= addedHeight {
+
+	}
+
+	var incomingRevenue int64 = 0
+	if revenue := m.incomingChannelRevenue[incomingChannel]; revenue != nil {
+		var err error
+		incomingRevenue, err = revenue.ValueAtInstant(addedAt)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	reputation := m.outgoingChannelReputation[outgoingChannel]
+
+	worstHoldTime := time.Duration(
+		incomingExpiryHeight-addedHeight,
+	) * m.params.ExpectedBlockSpeed
+	htlcRisk := m.params.opportunityCost(feeMsat, worstHoldTime)
+
+	return reputation > incomingRevenue+int64(htlcRisk), nil
 }
 
 // getInFlight returns the existing records of a HTLC if it is currently stored.
