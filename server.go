@@ -113,6 +113,21 @@ const (
 	// multiAddrConnectionStagger is the number of seconds to wait between
 	// attempting to a peer with each of its advertised addresses.
 	multiAddrConnectionStagger = 10 * time.Second
+
+	// defaultRevenueWindow is the time window over which revenue is tracked
+	// for reputation scoring.
+	defaultRevenueWindow = time.Hour * 24 * 14
+
+	// defaultReputationMultiplier is the multiplier applied to reputation
+	// scores for congestion control.
+	defaultReputationMultiplier = 12
+
+	// defaultResolutionPeriod is the time period over which congestion
+	// metrics are resolved.
+	defaultResolutionPeriod = time.Second * 90
+
+	// defaultExpectedBlockSpeed is the expected time between blocks.
+	defaultExpectedBlockSpeed = time.Minute * 10
 )
 
 var (
@@ -782,6 +797,12 @@ func newServer(ctx context.Context, cfg *Config, listenAddrs []net.Addr,
 	}
 
 	resourceManager, err := congestion.NewManager(&congestion.Config{
+		ReputationParams: &congestion.ReputationParams{
+			RevenueWindow:        defaultRevenueWindow,
+			ReputationMultiplier: defaultReputationMultiplier,
+			ResolutionPeriod:     defaultResolutionPeriod,
+			ExpectedBlockSpeed:   defaultExpectedBlockSpeed,
+		},
 		FetchAllOpenChannels: s.chanStateDB.FetchAllOpenChannels,
 		ListOpenCircuits: func() []congestion.InFlightHTLC {
 			circuits := circuitMap.ListOpenCircuits()
