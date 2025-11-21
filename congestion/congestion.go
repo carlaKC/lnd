@@ -339,7 +339,29 @@ func (m *Manager) hasReputation(addedAt time.Time, addedHeight uint32,
 	) * m.params.ExpectedBlockSpeed
 	htlcRisk := m.params.opportunityCost(feeMsat, worstHoldTime)
 
-	return reputation > incomingRevenue+int64(htlcRisk), nil
+	var inFlightRisk uint64 = 0
+	for _, htlc := range m.inFlightByIncoming {
+		if htlc.outgoingChannel != outgoingChannel {
+			continue
+		}
+
+		worstHoldTime := time.Duration(
+			htlc.incomingExpiryHeight-htlc.addedHeight,
+		) * m.params.ExpectedBlockSpeed
+
+		inFlightRisk += m.params.opportunityCost(
+			htlc.feeMsat, worstHoldTime,
+		)
+	}
+
+	hasRep := reputation > incomingRevenue+int64(htlcRisk)+int64(inFlightRisk)
+
+	log.Debugf("Reputation = %v for HTLC with fee: %v (%v -> %v) is %v "+
+		"less HTLC risk %v and in flight risk %v vs revenue %v",
+		hasRep, feeMsat, incomingChannel, outgoingChannel, reputation,
+		htlcRisk, inFlightRisk, incomingRevenue)
+
+	return hasRep, nil
 }
 
 // getInFlight returns the existing records of a HTLC if it is currently stored.
