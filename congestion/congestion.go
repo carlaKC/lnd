@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lightningnetwork/lnd/channeldb"
+	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/fn/v2"
 	"github.com/lightningnetwork/lnd/graph/db/models"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -13,6 +15,30 @@ import (
 // ErrChangeInOnionValue is returns when a HTLC is reported to the manager with a
 // different fee to what was originally proposed.
 var ErrChangeInOnionValue = fmt.Errorf("change in fee for htlc")
+
+// InFlightHTLC describes a forwarded HTLC that is currently irrevocably
+// committed on the outgoing channel, and has not yet been settled or failed.
+type InFlightHTLC struct {
+	// InKey is the circuit key identifying the incoming channel.
+	InKey models.CircuitKey
+	// OutKey is the circuit key identifying the outgoing channel.
+	OutKey models.CircuitKey
+	// FeeMsat paid to forward the HTLC.
+	FeeMsat lnwire.MilliSatoshi
+}
+
+type Config struct {
+	// Fetches all currently open channels from the database.
+	// TODO: what happens if a HTLC is on a closed channel?
+	FetchAllOpenChannels func() ([]*channeldb.OpenChannel, error)
+
+	// ListOpenCircuits returns a list of all the currently in-flight
+	// HTLCs forwarded by our node.
+	ListOpenCircuits func() []InFlightHTLC
+
+	// Clock provides wall time, and allows deterministic tests.
+	Clock clock.Clock
+}
 
 // A compile time check to ensure ResourceManager implements the
 // ResourceManager interface.
@@ -39,10 +65,69 @@ type inFlightData struct {
 }
 
 // NewManager creates a new congestion Manager with initialized maps.
-func NewManager() *Manager {
-	return &Manager{
-		inFlightByIncoming: make(map[models.CircuitKey]inFlightData),
+func NewManager(cfg *Config, startHeight uint32) (*Manager, error) {
+	inFlightByIncoming := make(map[models.CircuitKey]inFlightData)
+
+	incomingHTLCs := make(map[models.CircuitKey]*channeldb.HTLC)
+
+	channels, err := cfg.FetchAllOpenChannels()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch open channels: %w", err)
 	}
+
+	for _, channel := range channels {
+		chanID := channel.ShortChanID()
+		htlcs := channel.ActiveHtlcs()
+		for _, htlc := range htlcs {
+			if !htlc.Incoming {
+				continue
+			}
+			circuitKey := models.CircuitKey{
+				ChanID: chanID,
+				HtlcID: htlc.HtlcIndex,
+			}
+
+			incomingHTLCs[circuitKey] = &htlc
+		}
+	}
+
+	for _, circuit := range cfg.ListOpenCircuits() {
+		htlc, ok := incomingHTLCs[circuit.InKey]
+		if !ok {
+			// TODO(CKC): is it possible that we can't find a htlc
+			// in our channels if it is in the circuit map?
+			log.Warnf("HTLC: %v(%v) -> %v(%v) found in circuit "+
+				"map but not on incoming channel",
+				circuit.InKey.ChanID, circuit.InKey.HtlcID,
+				circuit.OutKey.ChanID, circuit.OutKey.HtlcID)
+			continue
+		}
+
+		accountable := Unaccountable
+		accountableType := uint64(lnwire.ExperimentalAccountableType)
+		accBytes, ok := htlc.CustomRecords[accountableType]
+		if ok && len(accBytes) > 0 {
+			if accBytes[0] == lnwire.ExperimentalAccountable {
+				accountable = Accountable
+			}
+		}
+
+		inFlightByIncoming[circuit.InKey] = inFlightData{
+			// TODO(CKC): need to be able to recover timestamp,
+			// from that we can "best effort" restore the
+			// addedHeight using 10 minute blocks.
+			addedAt:              cfg.Clock.Now(),
+			addedHeight:          startHeight,
+			feeMsat:              circuit.FeeMsat,
+			incomingExpiryHeight: htlc.RefundTimeout,
+			outgoingChannel:      circuit.OutKey.ChanID,
+			outgoingAccountable:  accountable,
+		}
+	}
+
+	return &Manager{
+		inFlightByIncoming: inFlightByIncoming,
+	}, nil
 }
 
 // HandleUpdateAddHTLC notifies the manager that an UpdateAddHTLC that

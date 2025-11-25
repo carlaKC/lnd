@@ -781,6 +781,37 @@ func newServer(ctx context.Context, cfg *Config, listenAddrs []net.Addr,
 		return nil, err
 	}
 
+	resourceManager, err := congestion.NewManager(&congestion.Config{
+		FetchAllOpenChannels: s.chanStateDB.FetchAllOpenChannels,
+		ListOpenCircuits: func() []congestion.InFlightHTLC {
+			circuits := circuitMap.ListOpenCircuits()
+			htlcs := make(
+				[]congestion.InFlightHTLC, 0,
+				len(circuits),
+			)
+
+			for _, circuit := range circuits {
+				if circuit.Outgoing == nil {
+					continue
+				}
+
+				feeMsat := circuit.IncomingAmount -
+					circuit.OutgoingAmount
+				htlc := congestion.InFlightHTLC{
+					InKey:   circuit.Incoming,
+					OutKey:  *circuit.Outgoing,
+					FeeMsat: feeMsat,
+				}
+				htlcs = append(htlcs, htlc)
+			}
+
+			return htlcs
+		},
+	}, uint32(currentHeight))
+	if err != nil {
+		return nil, err
+	}
+
 	s.htlcSwitch = htlcswitch.New(htlcswitch.Config{
 		DB:                   dbs.ChanStateDB,
 		CircuitMap:           circuitMap,
@@ -803,7 +834,7 @@ func newServer(ctx context.Context, cfg *Config, listenAddrs []net.Addr,
 			peer.HandleLocalCloseChanReqs(request)
 		},
 		FwdingLog:              dbs.ChanStateDB.ForwardingLog(),
-		ResourceManager:        congestion.NewManager(),
+		ResourceManager:        resourceManager,
 		SwitchPackager:         channeldb.NewSwitchPackager(),
 		FetchLastChannelUpdate: s.fetchLastChanUpdate(),
 		Notifier:               s.cc.ChainNotifier,
