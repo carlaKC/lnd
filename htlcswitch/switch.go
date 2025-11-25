@@ -338,7 +338,7 @@ type Switch struct {
 	// resMsgStore is used to store the set of ResolutionMsg that come from
 	// contractcourt. This is used so the Switch can properly forward them,
 	// even on restarts.
-	resMsgStore *resolutionStore
+	resMsgStore *ResolutionStore
 
 	// aliasToReal is a map used for option-scid-alias feature-bit links.
 	// The alias SCID is the key and the real, confirmed SCID is the value.

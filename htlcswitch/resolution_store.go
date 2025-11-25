@@ -22,23 +22,34 @@ var (
 	errResMsgNotFound = errors.New("resolution message not found")
 )
 
-// resolutionStore contains ResolutionMsgs received from the contractcourt. The
+// ResolutionStore contains ResolutionMsgs received from the contractcourt. The
 // Switch deletes these from the store when the underlying circuit has been
 // removed via DeleteCircuits. If the circuit hasn't been deleted, the Switch
 // will dispatch the ResolutionMsg to a link if this was a multi-hop HTLC or to
 // itself if the Switch initiated the payment.
-type resolutionStore struct {
+type ResolutionStore struct {
 	backend kvdb.Backend
 }
 
-func newResolutionStore(db kvdb.Backend) *resolutionStore {
-	return &resolutionStore{
+// NewResolutionStore creates a new resolution store instance.
+func NewResolutionStore(db kvdb.Backend) *ResolutionStore {
+	return &ResolutionStore{
 		backend: db,
 	}
 }
 
+func newResolutionStore(db kvdb.Backend) *ResolutionStore {
+	return NewResolutionStore(db)
+}
+
+// CheckResolutionMsg returns a function that checks whether a resolution
+// message exists for the given circuit key.
+func (r *ResolutionStore) CheckResolutionMsg() func(*CircuitKey) error {
+	return r.checkResolutionMsg
+}
+
 // addResolutionMsg persists a ResolutionMsg to the resolutionStore.
-func (r *resolutionStore) addResolutionMsg(
+func (r *ResolutionStore) addResolutionMsg(
 	resMsg *contractcourt.ResolutionMsg) error {
 
 	// The outKey will be the database key.
@@ -70,7 +81,7 @@ func (r *resolutionStore) addResolutionMsg(
 // checkResolutionMsg returns nil if the resolution message is found in the
 // store. It returns an error if no resolution message was found for the
 // passed outKey or if a database error occurred.
-func (r *resolutionStore) checkResolutionMsg(outKey *CircuitKey) error {
+func (r *ResolutionStore) checkResolutionMsg(outKey *CircuitKey) error {
 	err := kvdb.View(r.backend, func(tx kvdb.RTx) error {
 		resBucket := tx.ReadBucket(resBucketKey)
 		if resBucket == nil {
@@ -97,7 +108,7 @@ func (r *resolutionStore) checkResolutionMsg(outKey *CircuitKey) error {
 
 // fetchAllResolutionMsg returns a slice of all stored ResolutionMsgs. This is
 // used by the Switch on start-up.
-func (r *resolutionStore) fetchAllResolutionMsg() (
+func (r *ResolutionStore) fetchAllResolutionMsg() (
 	[]*contractcourt.ResolutionMsg, error) {
 
 	var msgs []*contractcourt.ResolutionMsg
@@ -139,7 +150,7 @@ func (r *resolutionStore) fetchAllResolutionMsg() (
 }
 
 // deleteResolutionMsg removes a ResolutionMsg with the passed-in CircuitKey.
-func (r *resolutionStore) deleteResolutionMsg(outKey *CircuitKey) error {
+func (r *ResolutionStore) deleteResolutionMsg(outKey *CircuitKey) error {
 	err := kvdb.Update(r.backend, func(tx kvdb.RwTx) error {
 		resBucket, err := tx.CreateTopLevelBucket(resBucketKey)
 		if err != nil {
