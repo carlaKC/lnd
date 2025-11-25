@@ -73,6 +73,10 @@ type CircuitLookup interface {
 	// LookupOpenCircuit queries the circuit map for a circuit identified
 	// by its outgoing circuit key.
 	LookupOpenCircuit(outKey CircuitKey) *PaymentCircuit
+
+	// ListOpenCircuits queries the circuit map for all currently open
+	// circuits.
+	ListOpenCircuits() []PaymentCircuit
 }
 
 // CircuitFwdActions represents the forwarding decision made by the circuit
@@ -164,6 +168,9 @@ var (
 	//
 	circuitKeystoneKey = []byte("circuit-keystones")
 )
+
+// Compile time check that circuitMap implements CircuitMap interface.
+var _ CircuitMap = (*circuitMap)(nil)
 
 // circuitMap is a data structure that implements thread safe, persistent
 // storage of circuit routing information. The switch consults a circuit map to
@@ -762,6 +769,19 @@ func (cm *circuitMap) LookupOpenCircuit(outKey CircuitKey) *PaymentCircuit {
 	defer cm.mtx.RUnlock()
 
 	return cm.opened[outKey]
+}
+
+// ListOpenCircuits queries the circuit map for all currently open circuits.
+func (cm *circuitMap) ListOpenCircuits() []PaymentCircuit {
+	cm.mtx.RLock()
+	defer cm.mtx.RUnlock()
+
+	circuits := make([]PaymentCircuit, 0, len(cm.opened))
+	for _, circuit := range cm.opened {
+		circuits = append(circuits, *circuit)
+	}
+
+	return circuits
 }
 
 // LookupByPaymentHash looks up and returns any payment circuits with a given

@@ -1138,6 +1138,10 @@ func (m *mockCircuitMap) LookupOpenCircuit(outKey CircuitKey) *PaymentCircuit {
 	return nil
 }
 
+func (m *mockCircuitMap) ListOpenCircuits() []PaymentCircuit {
+	return nil
+}
+
 func (m *mockCircuitMap) LookupByPaymentHash(hash [32]byte) []*PaymentCircuit {
 	return nil
 }
