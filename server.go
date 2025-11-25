@@ -767,8 +767,23 @@ func newServer(ctx context.Context, cfg *Config, listenAddrs []net.Addr,
 		return nil, err
 	}
 
-	s.htlcSwitch, err = htlcswitch.New(htlcswitch.Config{
+	resStore := htlcswitch.NewResolutionStore(dbs.ChanStateDB)
+
+	circuitMap, err := htlcswitch.NewCircuitMap(&htlcswitch.CircuitMapConfig{
+		DB:                    dbs.ChanStateDB,
+		FetchAllOpenChannels:  s.chanStateDB.FetchAllOpenChannels,
+		FetchClosedChannels:   s.chanStateDB.FetchClosedChannels,
+		ExtractErrorEncrypter: s.sphinx.ExtractErrorEncrypter,
+		CheckResolutionMsg:    resStore.CheckResolutionMsg(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	s.htlcSwitch = htlcswitch.New(htlcswitch.Config{
 		DB:                   dbs.ChanStateDB,
+		CircuitMap:           circuitMap,
+		ResolutionStore:      resStore,
 		FetchAllOpenChannels: s.chanStateDB.FetchAllOpenChannels,
 		FetchAllChannels:     s.chanStateDB.FetchAllChannels,
 		FetchClosedChannels:  s.chanStateDB.FetchClosedChannels,
@@ -788,7 +803,6 @@ func newServer(ctx context.Context, cfg *Config, listenAddrs []net.Addr,
 		},
 		FwdingLog:              dbs.ChanStateDB.ForwardingLog(),
 		SwitchPackager:         channeldb.NewSwitchPackager(),
-		ExtractErrorEncrypter:  s.sphinx.ExtractErrorEncrypter,
 		FetchLastChannelUpdate: s.fetchLastChanUpdate(),
 		Notifier:               s.cc.ChainNotifier,
 		HtlcNotifier:           s.htlcNotifier,
@@ -803,9 +817,6 @@ func newServer(ctx context.Context, cfg *Config, listenAddrs []net.Addr,
 		SignAliasUpdate:        s.signAliasUpdate,
 		IsAlias:                aliasmgr.IsAlias,
 	}, uint32(currentHeight))
-	if err != nil {
-		return nil, err
-	}
 	s.interceptableSwitch, err = htlcswitch.NewInterceptableSwitch(
 		&htlcswitch.InterceptableSwitchConfig{
 			Switch:             s.htlcSwitch,

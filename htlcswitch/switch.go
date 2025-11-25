@@ -148,6 +148,12 @@ type Config struct {
 	// persistent circuit map.
 	DB kvdb.Backend
 
+	// CircuitMap is the persistent storage for payment circuits.
+	CircuitMap CircuitMap
+
+	// ResolutionStore is the persistent storage for resolution messages.
+	ResolutionStore *ResolutionStore
+
 	// FetchAllOpenChannels is a function that fetches all currently open
 	// channels from the channel database.
 	FetchAllOpenChannels func() ([]*channeldb.OpenChannel, error)
@@ -165,11 +171,6 @@ type Config struct {
 	// active channels. This gives the switch the ability to read arbitrary
 	// forwarding packages, and ack settles and fails contained within them.
 	SwitchPackager channeldb.FwdOperator
-
-	// ExtractErrorEncrypter is an interface allowing switch to reextract
-	// error encrypters stored in the circuit map on restarts, since they
-	// are not stored directly within the database.
-	ExtractErrorEncrypter hop.ErrorEncrypterExtracter
 
 	// FetchLastChannelUpdate retrieves the latest routing policy for a
 	// target channel. This channel will typically be the outgoing channel
@@ -357,24 +358,11 @@ type Switch struct {
 }
 
 // New creates the new instance of htlc switch.
-func New(cfg Config, currentHeight uint32) (*Switch, error) {
-	resStore := newResolutionStore(cfg.DB)
-
-	circuitMap, err := NewCircuitMap(&CircuitMapConfig{
-		DB:                    cfg.DB,
-		FetchAllOpenChannels:  cfg.FetchAllOpenChannels,
-		FetchClosedChannels:   cfg.FetchClosedChannels,
-		ExtractErrorEncrypter: cfg.ExtractErrorEncrypter,
-		CheckResolutionMsg:    resStore.checkResolutionMsg,
-	})
-	if err != nil {
-		return nil, err
-	}
-
+func New(cfg Config, currentHeight uint32) *Switch {
 	s := &Switch{
 		bestHeight:        currentHeight,
 		cfg:               &cfg,
-		circuits:          circuitMap,
+		circuits:          cfg.CircuitMap,
 		linkIndex:         make(map[lnwire.ChannelID]ChannelLink),
 		forwardingIndex:   make(map[lnwire.ShortChannelID]ChannelLink),
 		interfaceIndex:    make(map[[33]byte]map[lnwire.ChannelID]ChannelLink),
@@ -384,7 +372,7 @@ func New(cfg Config, currentHeight uint32) (*Switch, error) {
 		htlcPlex:          make(chan *plexPacket),
 		chanCloseRequests: make(chan *ChanClose),
 		resolutionMsgs:    make(chan *resolutionMsg),
-		resMsgStore:       resStore,
+		resMsgStore:       cfg.ResolutionStore,
 		quit:              make(chan struct{}),
 	}
 
@@ -398,7 +386,7 @@ func New(cfg Config, currentHeight uint32) (*Switch, error) {
 		failMailboxUpdate: s.failMailboxUpdate,
 	})
 
-	return s, nil
+	return s
 }
 
 // resolutionMsg is a struct that wraps an existing ResolutionMsg with a done

@@ -174,8 +174,23 @@ func initSwitchWithDB(startingHeight uint32, db *channeldb.DB) (*Switch, error) 
 		return testSig, nil
 	}
 
+	resStore := NewResolutionStore(db)
+
+	circuitMap, err := NewCircuitMap(&CircuitMapConfig{
+		DB:                    db,
+		FetchAllOpenChannels:  db.ChannelStateDB().FetchAllOpenChannels,
+		FetchClosedChannels:   db.ChannelStateDB().FetchClosedChannels,
+		ExtractErrorEncrypter: nil, // not used in these tests
+		CheckResolutionMsg:    resStore.CheckResolutionMsg(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := Config{
 		DB:                   db,
+		CircuitMap:           circuitMap,
+		ResolutionStore:      resStore,
 		FetchAllOpenChannels: db.ChannelStateDB().FetchAllOpenChannels,
 		FetchAllChannels:     db.ChannelStateDB().FetchAllChannels,
 		FetchClosedChannels:  db.ChannelStateDB().FetchClosedChannels,
@@ -208,7 +223,7 @@ func initSwitchWithDB(startingHeight uint32, db *channeldb.DB) (*Switch, error) 
 		IsAlias:                isAlias,
 	}
 
-	return New(cfg, startingHeight)
+	return New(cfg, startingHeight), nil
 }
 
 func initSwitchWithTempDB(t testing.TB, startingHeight uint32) (*Switch,
