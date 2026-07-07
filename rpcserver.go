@@ -7679,8 +7679,7 @@ func (r *rpcServer) ForwardingHistory(ctx context.Context,
 		return peer.Alias.UnwrapOr(""), nil
 	}
 
-	// TODO(roasbeef): add settlement latency?
-	//  * use FPE on all records?
+	// TODO(roasbeef): use FPE on all records?
 
 	// With the events retrieved, we'll now map them into the proper proto
 	// response.
@@ -7719,6 +7718,12 @@ func (r *rpcServer) ForwardingHistory(ctx context.Context,
 		// If the outgoing htlc id is present, add it to the response.
 		event.OutgoingHtlcID.WhenSome(func(id uint64) {
 			resp.ForwardingEvents[i].OutgoingHtlcId = &id
+		})
+
+		// If the settle duration is present, add it to the response.
+		event.SettleDuration.WhenSome(func(d time.Duration) {
+			ns := uint64(d.Nanoseconds())
+			resp.ForwardingEvents[i].SettleDurationNs = &ns
 		})
 
 		if req.PeerAliasLookup {

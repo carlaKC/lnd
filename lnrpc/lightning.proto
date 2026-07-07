@@ -4791,7 +4791,14 @@ message ForwardingEvent {
     // optional and may be unset for legacy forwarding events.
     optional uint64 outgoing_htlc_id = 15;
 
-    // TODO(roasbeef): add settlement latency?
+    // The number of nanoseconds that elapsed between the incoming HTLC being
+    // forwarded and the settle being received, i.e. the time the HTLC took to
+    // settle. This field is optional; it is unset for forwarding events
+    // recorded before this field was introduced and for HTLCs that were
+    // resolved after a restart of the daemon.
+    optional uint64 settle_duration_ns = 16;
+
+    // TODO(roasbeef):
     //  * use FPE on the chan id?
     //  * also list failures?
 }

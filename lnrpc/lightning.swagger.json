@@ -5207,6 +5207,11 @@
           "type": "string",
           "format": "uint64",
           "description": "The ID of the outgoing HTLC in the payment circuit. This field is\noptional and may be unset for legacy forwarding events."
+        },
+        "settle_duration_ns": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The number of nanoseconds that elapsed between the incoming HTLC being\nforwarded and the settle being received, i.e. the time the HTLC took to\nsettle. This field is optional; it is unset for forwarding events\nrecorded before this field was introduced and for HTLCs that were\nresolved after a restart of the daemon."
         }
       }
     },

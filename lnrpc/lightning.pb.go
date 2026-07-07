@@ -15533,8 +15533,14 @@ type ForwardingEvent struct {
 	// The ID of the outgoing HTLC in the payment circuit. This field is
 	// optional and may be unset for legacy forwarding events.
 	OutgoingHtlcId *uint64 `protobuf:"varint,15,opt,name=outgoing_htlc_id,json=outgoingHtlcId,proto3,oneof" json:"outgoing_htlc_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The number of nanoseconds that elapsed between the incoming HTLC being
+	// forwarded and the settle being received, i.e. the time the HTLC took to
+	// settle. This field is optional; it is unset for forwarding events
+	// recorded before this field was introduced and for HTLCs that were
+	// resolved after a restart of the daemon.
+	SettleDurationNs *uint64 `protobuf:"varint,16,opt,name=settle_duration_ns,json=settleDurationNs,proto3,oneof" json:"settle_duration_ns,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ForwardingEvent) Reset() {
@@ -15662,6 +15668,13 @@ func (x *ForwardingEvent) GetIncomingHtlcId() uint64 {
 func (x *ForwardingEvent) GetOutgoingHtlcId() uint64 {
 	if x != nil && x.OutgoingHtlcId != nil {
 		return *x.OutgoingHtlcId
+	}
+	return 0
+}
+
+func (x *ForwardingEvent) GetSettleDurationNs() uint64 {
+	if x != nil && x.SettleDurationNs != nil {
+		return *x.SettleDurationNs
 	}
 	return 0
 }
@@ -19765,7 +19778,7 @@ const file_lightning_proto_rawDesc = "" +
 	"\x0enum_max_events\x18\x04 \x01(\rR\fnumMaxEvents\x12*\n" +
 	"\x11peer_alias_lookup\x18\x05 \x01(\bR\x0fpeerAliasLookup\x12*\n" +
 	"\x11incoming_chan_ids\x18\x06 \x03(\x04R\x0fincomingChanIds\x12*\n" +
-	"\x11outgoing_chan_ids\x18\a \x03(\x04R\x0foutgoingChanIds\"\x8d\x04\n" +
+	"\x11outgoing_chan_ids\x18\a \x03(\x04R\x0foutgoingChanIds\"\xd7\x04\n" +
 	"\x0fForwardingEvent\x12 \n" +
 	"\ttimestamp\x18\x01 \x01(\x04B\x02\x18\x01R\ttimestamp\x12 \n" +
 	"\n" +
@@ -19783,9 +19796,11 @@ const file_lightning_proto_rawDesc = "" +
 	"\rpeer_alias_in\x18\f \x01(\tR\vpeerAliasIn\x12$\n" +
 	"\x0epeer_alias_out\x18\r \x01(\tR\fpeerAliasOut\x12-\n" +
 	"\x10incoming_htlc_id\x18\x0e \x01(\x04H\x00R\x0eincomingHtlcId\x88\x01\x01\x12-\n" +
-	"\x10outgoing_htlc_id\x18\x0f \x01(\x04H\x01R\x0eoutgoingHtlcId\x88\x01\x01B\x13\n" +
+	"\x10outgoing_htlc_id\x18\x0f \x01(\x04H\x01R\x0eoutgoingHtlcId\x88\x01\x01\x121\n" +
+	"\x12settle_duration_ns\x18\x10 \x01(\x04H\x02R\x10settleDurationNs\x88\x01\x01B\x13\n" +
 	"\x11_incoming_htlc_idB\x13\n" +
-	"\x11_outgoing_htlc_id\"\x8c\x01\n" +
+	"\x11_outgoing_htlc_idB\x15\n" +
+	"\x13_settle_duration_ns\"\x8c\x01\n" +
 	"\x19ForwardingHistoryResponse\x12C\n" +
 	"\x11forwarding_events\x18\x01 \x03(\v2\x16.lnrpc.ForwardingEventR\x10forwardingEvents\x12*\n" +
 	"\x11last_offset_index\x18\x02 \x01(\rR\x0flastOffsetIndex\"P\n" +

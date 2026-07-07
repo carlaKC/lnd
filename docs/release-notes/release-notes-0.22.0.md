@@ -59,6 +59,12 @@
   the chain backend via bitcoind's `submitpackage`, allowing a zero-fee v3/TRUC
   parent to be accepted together with a fee-paying CPFP child.
 
+* The `ForwardingHistory` RPC now reports the [time a forwarded HTLC took to
+  settle](https://github.com/lightningnetwork/lnd/pull/10901) via the new
+  optional `settle_duration_ns` field on `ForwardingEvent`. The field is unset
+  for events recorded before this change and for HTLCs that were resolved
+  after a restart.
+
 ## lncli Additions
 
 * The `estimateroutefee` command now supports [restricting fee estimates to
