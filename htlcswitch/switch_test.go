@@ -2976,6 +2976,10 @@ func TestMultiHopPaymentForwardingEvents(t *testing.T) {
 			t.Fatalf("outgoing amt mismatch: expected %v, got %v",
 				event.AmtOut, finalAmt)
 		}
+
+		// The settle duration should be set, as Bob's circuits were
+		// created and settled without a restart.
+		require.True(t, event.SettleDuration.IsSome())
 	}
 }
 

@@ -3,6 +3,7 @@ package htlcswitch
 import (
 	"encoding/binary"
 	"io"
+	"time"
 
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/graph/db/models"
@@ -61,6 +62,13 @@ type PaymentCircuit struct {
 	// NOTE: This value is determined implicitly during a restart. It is not
 	// persisted, and should never be set outside the circuit map.
 	LoadedFromDisk bool
+
+	// OpenTime is the time at which the switch created this circuit to
+	// forward an ADD.
+	//
+	// NOTE: This value is not persisted, so it will be zero for circuits
+	// that are reloaded from disk after a restart.
+	OpenTime time.Time
 }
 
 // HasKeystone returns true if an outgoing link has assigned this circuit's
@@ -70,8 +78,10 @@ func (c *PaymentCircuit) HasKeystone() bool {
 }
 
 // newPaymentCircuit initializes a payment circuit on the heap using the payment
-// hash and an in-memory htlc packet.
-func newPaymentCircuit(hash *[32]byte, pkt *htlcPacket) *PaymentCircuit {
+// hash, an in-memory htlc packet and the time that the circuit is opened at.
+func newPaymentCircuit(hash *[32]byte, pkt *htlcPacket,
+	openTime time.Time) *PaymentCircuit {
+
 	var addRef channeldb.AddRef
 	if pkt.sourceRef != nil {
 		addRef = *pkt.sourceRef
@@ -87,6 +97,7 @@ func newPaymentCircuit(hash *[32]byte, pkt *htlcPacket) *PaymentCircuit {
 		IncomingAmount: pkt.incomingAmount,
 		OutgoingAmount: pkt.amount,
 		ErrorEncrypter: pkt.obfuscator,
+		OpenTime:       openTime,
 	}
 }
 

@@ -603,7 +603,9 @@ func (s *Switch) SendHTLC(firstHop lnwire.ShortChannelID, attemptID uint64,
 		return errFeeExposureExceeded
 	}
 
-	circuit := newPaymentCircuit(&htlc.PaymentHash, packet)
+	circuit := newPaymentCircuit(
+		&htlc.PaymentHash, packet, s.cfg.Clock.Now(),
+	)
 	actions, err := s.circuits.CommitCircuits(circuit)
 	if err != nil {
 		log.Errorf("unable to commit circuit in switch: %v", err)
@@ -717,13 +719,18 @@ func (s *Switch) ForwardPackets(linkQuit <-chan struct{},
 
 	// Make a first pass over the packets, forwarding any settles or fails.
 	// As adds are found, we create a circuit and append it to our set of
-	// circuits to be written to disk.
+	// circuits to be written to disk. The circuits in this batch are
+	// committed atomically below, so they all share a single open time.
+	openTime := s.cfg.Clock.Now()
+
 	var circuits []*PaymentCircuit
 	var addBatch []*htlcPacket
 	for _, packet := range packets {
 		switch htlc := packet.htlc.(type) {
 		case *lnwire.UpdateAddHTLC:
-			circuit := newPaymentCircuit(&htlc.PaymentHash, packet)
+			circuit := newPaymentCircuit(
+				&htlc.PaymentHash, packet, openTime,
+			)
 			packet.circuit = circuit
 			circuits = append(circuits, circuit)
 			addBatch = append(addBatch, packet)
@@ -3082,23 +3089,33 @@ func (s *Switch) handlePacketSettle(packet *htlcPacket) error {
 			circuit.IncomingAmount-circuit.OutgoingAmount,
 			circuit.Incoming.ChanID, circuit.Outgoing.ChanID)
 
+		settleTime := s.cfg.Clock.Now()
+		event := channeldb.ForwardingEvent{
+			Timestamp:      settleTime,
+			IncomingChanID: circuit.Incoming.ChanID,
+			OutgoingChanID: circuit.Outgoing.ChanID,
+			AmtIn:          circuit.IncomingAmount,
+			AmtOut:         circuit.OutgoingAmount,
+			IncomingHtlcID: fn.Some(
+				circuit.Incoming.HtlcID,
+			),
+			OutgoingHtlcID: fn.Some(
+				circuit.Outgoing.HtlcID,
+			),
+		}
+
+		// If we know when the circuit was opened, record how long the
+		// HTLC took to settle. The open time is not persisted, so it
+		// is unknown for circuits that were reloaded from disk after
+		// a restart.
+		if !circuit.OpenTime.IsZero() {
+			event.SettleDuration = fn.Some(
+				settleTime.Sub(circuit.OpenTime),
+			)
+		}
+
 		s.fwdEventMtx.Lock()
-		s.pendingFwdingEvents = append(
-			s.pendingFwdingEvents,
-			channeldb.ForwardingEvent{
-				Timestamp:      time.Now(),
-				IncomingChanID: circuit.Incoming.ChanID,
-				OutgoingChanID: circuit.Outgoing.ChanID,
-				AmtIn:          circuit.IncomingAmount,
-				AmtOut:         circuit.OutgoingAmount,
-				IncomingHtlcID: fn.Some(
-					circuit.Incoming.HtlcID,
-				),
-				OutgoingHtlcID: fn.Some(
-					circuit.Outgoing.HtlcID,
-				),
-			},
-		)
+		s.pendingFwdingEvents = append(s.pendingFwdingEvents, event)
 		s.fwdEventMtx.Unlock()
 	}
 
