@@ -2,6 +2,7 @@ package channeldb
 
 import (
 	"bytes"
+	"io"
 	"math/rand"
 	"reflect"
 	"testing"
@@ -39,6 +40,20 @@ func TestForwardingLogBasicStorageAndQuery(t *testing.T) {
 	numEvents := 100
 	events := make([]ForwardingEvent, numEvents)
 	for i := range numEvents {
+		// We'll only set the settle duration on every other event to
+		// ensure that both set and unset values survive a round trip.
+		// The random duration is drawn from [1ns, 1h] because a zero
+		// duration is reserved as the "unknown" sentinel and would
+		// not round-trip.
+		settleDuration := fn.None[time.Duration]()
+		if i%2 == 0 {
+			settleDuration = fn.Some(
+				time.Duration(
+					rand.Int63n(int64(time.Hour)) + 1,
+				),
+			)
+		}
+
 		events[i] = ForwardingEvent{
 			Timestamp:      timestamp,
 			IncomingChanID: lnwire.NewShortChanIDFromInt(uint64(rand.Int63())),
@@ -47,6 +62,7 @@ func TestForwardingLogBasicStorageAndQuery(t *testing.T) {
 			AmtOut:         lnwire.MilliSatoshi(rand.Int63()),
 			IncomingHtlcID: fn.Some(uint64(i)),
 			OutgoingHtlcID: fn.Some(uint64(i)),
+			SettleDuration: settleDuration,
 		}
 
 		timestamp = timestamp.Add(time.Minute * 10)
@@ -81,6 +97,66 @@ func TestForwardingLogBasicStorageAndQuery(t *testing.T) {
 	if timeSlice.LastIndexOffset != uint32(numEvents) {
 		t.Fatalf("wrong final offset: expected %v, got %v",
 			timeSlice.LastIndexOffset, numEvents)
+	}
+}
+
+// TestForwardingLogSettleDurationSentinel tests that settle durations which
+// do not represent a real measurement are treated as unknown: unset, zero and
+// negative durations are all encoded as the zero sentinel and decode as an
+// unset option. It also asserts that the settle duration is always written,
+// keeping the record size fixed.
+func TestForwardingLogSettleDurationSentinel(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		settleDuration fn.Option[time.Duration]
+	}{
+		{
+			name:           "unset duration",
+			settleDuration: fn.None[time.Duration](),
+		},
+		{
+			name:           "zero duration",
+			settleDuration: fn.Some(time.Duration(0)),
+		},
+		{
+			name:           "negative duration",
+			settleDuration: fn.Some(-time.Second),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			event := ForwardingEvent{
+				IncomingChanID: lnwire.NewShortChanIDFromInt(1),
+				OutgoingChanID: lnwire.NewShortChanIDFromInt(2),
+				AmtIn:          lnwire.MilliSatoshi(1000),
+				AmtOut:         lnwire.MilliSatoshi(900),
+				IncomingHtlcID: fn.Some(uint64(1)),
+				OutgoingHtlcID: fn.Some(uint64(2)),
+				SettleDuration: test.settleDuration,
+			}
+
+			var buf bytes.Buffer
+			err := encodeForwardingEvent(&buf, &event)
+			require.NoError(t, err)
+
+			// The settle duration is always written, even when it
+			// is unknown, so that the record length identifies
+			// the schema version.
+			require.Len(t, buf.Bytes(), forwardingEventSize)
+
+			var decoded ForwardingEvent
+			err = decodeForwardingEvent(&buf, &decoded)
+			require.NoError(t, err)
+			require.Equal(
+				t, fn.None[time.Duration](),
+				decoded.SettleDuration,
+			)
+		})
 	}
 }
 
@@ -433,13 +509,103 @@ func TestForwardingLogDecodeForwardingEvent(t *testing.T) {
 	for _, event := range timeSlice.ForwardingEvents {
 		require.Equal(t, fn.None[uint64](), event.IncomingHtlcID)
 		require.Equal(t, fn.None[uint64](), event.OutgoingHtlcID)
+		require.Equal(
+			t, fn.None[time.Duration](), event.SettleDuration,
+		)
 	}
 }
 
-// writeOldFormatEvents writes forwarding events to the database in the old
-// format (without incoming and outgoing htlc indices). This is used to test
-// backward compatibility.
-func writeOldFormatEvents(db *DB, events []ForwardingEvent) error {
+// TestForwardingLogDecodeV20ForwardingEvent tests that forwarding events
+// written in the v0.20 format (with htlc IDs, but without a settle duration)
+// are decoded with an empty settle duration.
+func TestForwardingLogDecodeV20ForwardingEvent(t *testing.T) {
+	t.Parallel()
+
+	// First, we'll set up a test database, and use that to instantiate the
+	// forwarding event log that we'll be using for the duration of the
+	// test.
+	db, err := MakeTestDB(t)
+	require.NoError(t, err)
+
+	log := ForwardingLog{
+		db: db,
+	}
+
+	initialTime := time.Unix(1234, 0)
+	endTime := time.Unix(1234, 0)
+
+	// We'll create forwarding events that have htlc IDs set, but no settle
+	// duration.
+	numEvents := 10
+	events := make([]ForwardingEvent, numEvents)
+	for i := range numEvents {
+		events[i] = ForwardingEvent{
+			Timestamp: endTime,
+			IncomingChanID: lnwire.NewShortChanIDFromInt(
+				uint64(rand.Int63()),
+			),
+			OutgoingChanID: lnwire.NewShortChanIDFromInt(
+				uint64(rand.Int63()),
+			),
+			AmtIn:          lnwire.MilliSatoshi(rand.Int63()),
+			AmtOut:         lnwire.MilliSatoshi(rand.Int63()),
+			IncomingHtlcID: fn.Some(uint64(i)),
+			OutgoingHtlcID: fn.Some(uint64(i)),
+		}
+
+		endTime = endTime.Add(time.Minute * 10)
+	}
+
+	// Now that all of our events are constructed, we'll add them to the
+	// database in the v0.20 format.
+	err = writeV20FormatEvents(db, events)
+	require.NoError(t, err)
+
+	// With all of our events added, we'll now query for them and ensure
+	// that the htlc IDs are set, but the settle duration is empty.
+	eventQuery := ForwardingEventQuery{
+		StartTime:    initialTime,
+		EndTime:      endTime,
+		IndexOffset:  0,
+		NumMaxEvents: uint32(numEvents * 3),
+	}
+	timeSlice, err := log.Query(eventQuery)
+	require.NoError(t, err)
+	require.Equal(t, numEvents, len(timeSlice.ForwardingEvents))
+
+	for i, event := range timeSlice.ForwardingEvents {
+		require.Equal(t, fn.Some(uint64(i)), event.IncomingHtlcID)
+		require.Equal(t, fn.Some(uint64(i)), event.OutgoingHtlcID)
+		require.Equal(
+			t, fn.None[time.Duration](), event.SettleDuration,
+		)
+	}
+}
+
+// writeV20FormatEvents writes forwarding events to the database in the v0.20
+// format (with incoming and outgoing htlc indices, but without a settle
+// duration). This is used to test backward compatibility.
+func writeV20FormatEvents(db *DB, events []ForwardingEvent) error {
+	return writeRawEvents(db, events, func(w io.Writer,
+		event ForwardingEvent) error {
+
+		// Write the original fields along with the htlc indices, but
+		// no settle duration.
+		return WriteElements(
+			w, event.IncomingChanID, event.OutgoingChanID,
+			event.AmtIn, event.AmtOut,
+			event.IncomingHtlcID.UnwrapOr(0),
+			event.OutgoingHtlcID.UnwrapOr(0),
+		)
+	})
+}
+
+// writeRawEvents writes forwarding events to the database using the given
+// encoder. This is used to test backward compatibility with events written
+// in older formats.
+func writeRawEvents(db *DB, events []ForwardingEvent,
+	encode func(io.Writer, ForwardingEvent) error) error {
+
 	return kvdb.Batch(db.Backend, func(tx kvdb.RwTx) error {
 		bucket, err := tx.CreateTopLevelBucket(forwardingLogBucket)
 		if err != nil {
@@ -452,17 +618,8 @@ func writeOldFormatEvents(db *DB, events []ForwardingEvent) error {
 				event.Timestamp.UnixNano(),
 			))
 
-			// Use the old event size (32 bytes) for writing old
-			// format events.
-			var eventBytes [32]byte
-			eventBuf := bytes.NewBuffer(eventBytes[0:0:32])
-
-			// Write only the original fields without incoming and
-			// outgoing htlc indices.
-			if err := WriteElements(
-				eventBuf, event.IncomingChanID,
-				event.OutgoingChanID, event.AmtIn, event.AmtOut,
-			); err != nil {
+			var eventBuf bytes.Buffer
+			if err := encode(&eventBuf, event); err != nil {
 				return err
 			}
 
@@ -474,6 +631,22 @@ func writeOldFormatEvents(db *DB, events []ForwardingEvent) error {
 		}
 
 		return nil
+	})
+}
+
+// writeOldFormatEvents writes forwarding events to the database in the old
+// format (without incoming and outgoing htlc indices). This is used to test
+// backward compatibility.
+func writeOldFormatEvents(db *DB, events []ForwardingEvent) error {
+	return writeRawEvents(db, events, func(w io.Writer,
+		event ForwardingEvent) error {
+
+		// Write only the original fields without incoming and
+		// outgoing htlc indices.
+		return WriteElements(
+			w, event.IncomingChanID, event.OutgoingChanID,
+			event.AmtIn, event.AmtOut,
+		)
 	})
 }
 

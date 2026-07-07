@@ -29,16 +29,16 @@ const (
 	//
 	//  * 8 byte incoming chan ID || 8 byte outgoing chan ID || 8 byte value in
 	//    || 8 byte value out || 8 byte incoming htlc id || 8 byte
-	//    outgoing htlc id
+	//    outgoing htlc id || 8 byte settle duration (zero if unknown)
 	//
 	// From the value in and value out, callers can easily compute the
 	// total fee extract from a forwarding event.
-	forwardingEventSize = 48
+	forwardingEventSize = 56
 
 	// MaxResponseEvents is the max number of forwarding events that will
 	// be returned by a single query response. This size was selected to
 	// safely remain under gRPC's 4MiB message size response limit. As each
-	// full forwarding event (including the timestamp) is 40 bytes, we can
+	// full forwarding event (including the timestamp) is 64 bytes, we can
 	// safely return 50k entries in a single response.
 	MaxResponseEvents = 50000
 
@@ -98,6 +98,15 @@ type ForwardingEvent struct {
 	// v0.20 and is made optional to make it backward compatible with
 	// existing forwarding events created before it's introduction.
 	OutgoingHtlcID fn.Option[uint64]
+
+	// SettleDuration is the time elapsed between the incoming HTLC being
+	// forwarded and the settle being received. This field is optional, it
+	// is unset for forwarding events created before its introduction and
+	// for HTLCs that were resolved after a restart of the daemon. It is
+	// encoded as a zero value when unset, which is unambiguous because a
+	// real settle can never take zero time. Note that this means a zero
+	// or negative duration provided by a caller will read back as unset.
+	SettleDuration fn.Option[time.Duration]
 }
 
 // encodeForwardingEvent writes out the target forwarding event to the passed
@@ -121,9 +130,19 @@ func encodeForwardingEvent(w io.Writer, f *ForwardingEvent) error {
 		return err
 	}
 
+	// The settle duration is unknown for HTLCs whose circuit was reloaded
+	// from disk after a restart, so we encode it as zero in that case. We
+	// always write the field so that the record length remains in
+	// lockstep with the schema version, allowing further fields to be
+	// appended in the same manner.
+	settleDuration := f.SettleDuration.UnwrapOr(0)
+	if settleDuration < 0 {
+		settleDuration = 0
+	}
+
 	return WriteElements(
 		w, f.IncomingChanID, f.OutgoingChanID, f.AmtIn, f.AmtOut,
-		incomingID, outgoingID,
+		incomingID, outgoingID, uint64(settleDuration),
 	)
 }
 
@@ -149,6 +168,26 @@ func decodeForwardingEvent(r io.Reader, f *ForwardingEvent) error {
 	case err == nil:
 		f.IncomingHtlcID = fn.Some(incomingHtlcID)
 		f.OutgoingHtlcID = fn.Some(outgoingHtlcID)
+
+	case errors.Is(err, io.EOF):
+		return nil
+
+	default:
+		return err
+	}
+
+	// Decode the settle duration. As above, records written before its
+	// introduction are handled via EOF. A zero value indicates that the
+	// duration is unknown, in which case we leave the field unset.
+	var settleDuration uint64
+	err = ReadElements(r, &settleDuration)
+	switch {
+	case err == nil:
+		if settleDuration != 0 {
+			f.SettleDuration = fn.Some(
+				time.Duration(settleDuration),
+			)
+		}
 
 		return nil
 
