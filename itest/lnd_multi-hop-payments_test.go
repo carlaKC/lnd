@@ -238,6 +238,15 @@ func testMultiHopPayments(ht *lntest.HarnessTest) {
 	}
 	require.Equal(ht, expectedIDs, seenIDs)
 
+	// Each event should report the time the HTLC took to settle. Dave
+	// did not restart while the HTLCs were in flight, so the duration is
+	// expected to be set. Note that the field can never carry a zero
+	// value: an unknown duration is stored as a zero sentinel, which is
+	// reported as an absent field.
+	for _, event := range fwdingHistory.ForwardingEvents {
+		require.NotNil(ht, event.SettleDurationNs)
+	}
+
 	// We expect Carol to have successful forwards and settles for
 	// her sends.
 	ht.AssertHtlcEvents(
